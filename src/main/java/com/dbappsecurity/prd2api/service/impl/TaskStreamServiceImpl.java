@@ -1,12 +1,14 @@
 package com.dbappsecurity.prd2api.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
 import com.dbappsecurity.prd2api.constant.TaskStatusEnum;
 import com.dbappsecurity.prd2api.entity.PrdTask;
 import com.dbappsecurity.prd2api.mapper.PrdTaskMapper;
 import com.dbappsecurity.prd2api.service.TaskService;
 import com.dbappsecurity.prd2api.service.TaskStreamService;
 import com.dbappsecurity.prd2api.vo.TaskVO;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,6 +19,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,16 +40,28 @@ public class TaskStreamServiceImpl implements TaskStreamService {
 
     private final PrdTaskMapper prdTaskMapper;
     private final TaskService taskService;
+    private final Prd2ApiProperties properties;
 
-    private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(2, runnable -> {
-        Thread thread = new Thread(runnable, "prd2api-task-stream");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private ScheduledExecutorService executor;
+    private Semaphore slots;
+
+    @PostConstruct
+    public void init() {
+        int threads = Math.max(1, properties.getAsync().getStreamThreads());
+        executor = Executors.newScheduledThreadPool(threads, runnable -> {
+            Thread thread = new Thread(runnable, "prd2api-task-stream");
+            thread.setDaemon(true);
+            return thread;
+        });
+        slots = new Semaphore(Math.max(1, properties.getAsync().getStreamMaxConnections()));
+        log.info("SSE 推送池初始化完成 threads={} maxConnections={}", threads, slots.availablePermits());
+    }
 
     @PreDestroy
     public void shutdown() {
-        executor.shutdownNow();
+        if (executor != null) {
+            executor.shutdownNow();
+        }
     }
 
     @Override
@@ -54,20 +69,34 @@ public class TaskStreamServiceImpl implements TaskStreamService {
         // 请求线程内完成租户校验，轮询线程不再依赖 ThreadLocal 上下文
         taskService.checkTaskAccess(taskId);
 
+        if (!slots.tryAcquire()) {
+            SseEmitter rejected = new SseEmitter(0L);
+            finishWithError(rejected, new AtomicBoolean(false), "SSE 连接数已达上限，请稍后重试");
+            return rejected;
+        }
         SseEmitter emitter = new SseEmitter(TIMEOUT_MS);
         AtomicBoolean done = new AtomicBoolean(false);
+        AtomicBoolean released = new AtomicBoolean(false);
         AtomicReference<ScheduledFuture<?>> future = new AtomicReference<>();
+        Runnable release = () -> {
+            if (released.compareAndSet(false, true)) {
+                slots.release();
+            }
+        };
         emitter.onCompletion(() -> {
             done.set(true);
             cancel(future.get());
+            release.run();
         });
         emitter.onTimeout(() -> {
             done.set(true);
             completeQuietly(emitter);
+            release.run();
         });
         emitter.onError(error -> {
             done.set(true);
             cancel(future.get());
+            release.run();
         });
 
         if (!pushOnce(taskId, emitter, done)) {

@@ -35,10 +35,20 @@ public class RagRetrieveService {
 
     /**
      * 缓存任务分块原文（供本地降级召回）
+     * <p>
+     * 超过配置上限的分块缓存直接跳过，避免单个大文档把 Redis 内存打满；
+     * 此时向量召回仍可用，本地降级召回会缺少上下文。
      */
     public void cacheChunks(String taskId, List<String> chunks) {
+        String json = JSONUtil.toJsonStr(chunks);
+        int maxChars = properties.getChunk().getMaxCacheChars();
+        if (maxChars > 0 && json.length() > maxChars) {
+            log.warn("分块缓存超过上限，跳过 Redis 缓存 taskId={} length={} limit={}",
+                    taskId, json.length(), maxChars);
+            return;
+        }
         stringRedisTemplate.opsForValue()
-                .set(RedisKeyConstant.ragChunks(taskId), JSONUtil.toJsonStr(chunks), CHUNK_TTL_DAYS, TimeUnit.DAYS);
+                .set(RedisKeyConstant.ragChunks(taskId), json, CHUNK_TTL_DAYS, TimeUnit.DAYS);
     }
 
     public List<String> readChunks(String taskId) {

@@ -14,6 +14,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebMvcConfig implements WebMvcConfigurer {
 
     private final AuthInterceptor authInterceptor;
+    private final Prd2ApiProperties properties;
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -25,8 +26,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
+        String[] origins = properties.getSecurity().getAllowedOrigins().isEmpty()
+                ? new String[]{"*"}
+                : properties.getSecurity().getAllowedOrigins().toArray(new String[0]);
         registry.addMapping("/api/**")
-                .allowedOriginPatterns("*")
+                .allowedOriginPatterns(origins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .exposedHeaders("X-Trace-Id")

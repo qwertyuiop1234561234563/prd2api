@@ -5,12 +5,17 @@ import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.data.redis.core.script.RedisScript;
 import org.springframework.stereotype.Component;
 
-import java.util.concurrent.TimeUnit;
+import java.util.List;
 
 /**
- * 基于 Redis ZSET 的滑动窗口限流（单机纬度：租户 + 用户）
+ * 基于 Redis ZSET 的滑动窗口限流（纬度：租户 + 用户）
+ * <p>
+ * 使用 Lua 脚本把「清理过期、写入、计数、回滚」放在一次原子调用内，
+ * 避免并发下多次命令交错导致计数失真。
  */
 @Slf4j
 @Component
@@ -18,6 +23,25 @@ import java.util.concurrent.TimeUnit;
 public class RateLimitUtil {
 
     private static final long WINDOW_MILLIS = 60_000L;
+
+    private static final String SCRIPT_TEXT = """
+            local key = KEYS[1]
+            local now = tonumber(ARGV[1])
+            local window = tonumber(ARGV[2])
+            local limit = tonumber(ARGV[3])
+            local member = ARGV[4]
+            redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+            redis.call('ZADD', key, now, member)
+            local count = redis.call('ZCARD', key)
+            redis.call('PEXPIRE', key, window * 2)
+            if count > limit then
+              redis.call('ZREM', key, member)
+              return 0
+            end
+            return 1
+            """;
+
+    private static final RedisScript<Long> SCRIPT = new DefaultRedisScript<>(SCRIPT_TEXT, Long.class);
 
     private final StringRedisTemplate stringRedisTemplate;
 
@@ -32,17 +56,13 @@ public class RateLimitUtil {
             return;
         }
         long now = System.currentTimeMillis();
-        long windowStart = now - WINDOW_MILLIS;
         String member = now + "-" + Thread.currentThread().getId() + "-" + Math.random();
         try {
-            stringRedisTemplate.opsForZSet().removeRangeByScore(key, 0, windowStart);
-            stringRedisTemplate.opsForZSet().add(key, member, now);
-            Long count = stringRedisTemplate.opsForZSet().zCard(key);
-            stringRedisTemplate.expire(key, 2, TimeUnit.MINUTES);
-            if (count != null && count > limitPerMinute) {
-                // 本次请求本身不占用配额
-                stringRedisTemplate.opsForZSet().remove(key, member);
-                log.warn("触发滑动窗口限流 key={} count={} limit={}", key, count, limitPerMinute);
+            Long allowed = stringRedisTemplate.execute(SCRIPT, List.of(key),
+                    String.valueOf(now), String.valueOf(WINDOW_MILLIS),
+                    String.valueOf(limitPerMinute), member);
+            if (allowed != null && allowed == 0L) {
+                log.warn("触发滑动窗口限流 key={} limit={}/min", key, limitPerMinute);
                 throw new BizException(BizErrorCodeEnum.RATE_LIMITED,
                         "请求过于频繁，每分钟上限 " + limitPerMinute + " 次");
             }

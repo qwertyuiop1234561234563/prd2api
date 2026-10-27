@@ -9,6 +9,8 @@ prd2api:
   storage:
     mode: ${STORAGE_MODE:oss}
     local-path: /data/prd2api/upload
+  security:
+    require-identity: true
   clean:
     expire-day: 7
   async:
@@ -18,6 +20,11 @@ prd2api:
     llm-max: 12
 
 management:
+  endpoints:
+    web:
+      exposure:
+        # 生产仅暴露健康检查与 Prometheus 指标，避免 /metrics、/env 等信息泄露
+        include: health,prometheus
   endpoint:
     health:
       show-details: never

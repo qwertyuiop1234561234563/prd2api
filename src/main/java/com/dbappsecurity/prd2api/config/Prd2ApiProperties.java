@@ -50,6 +50,8 @@ public class Prd2ApiProperties {
         private int overlap = 150;
         /** 单次送入 LLM 的最大字符数，超出走压缩 */
         private int maxLlmChars = 60000;
+        /** 解析文本写入 Redis 缓存的最大字符数，超出则不入缓存，避免大文档打爆 Redis */
+        private int maxCacheChars = 200000;
     }
 
     @Data
@@ -93,6 +95,10 @@ public class Prd2ApiProperties {
         private List<String> ipBlacklist = new ArrayList<>();
         /** 接口路径黑名单（前缀匹配，如 /api/rag） */
         private List<String> pathBlacklist = new ArrayList<>();
+        /** 允许的跨域来源，默认 * 仅用于开发；生产建议配置具体域名 */
+        private List<String> allowedOrigins = new ArrayList<>();
+        /** 是否强制要求 X-Tenant-Id / X-User-Key，true 时缺失直接 401 */
+        private boolean requireIdentity = false;
     }
 
     @Data
@@ -116,5 +122,9 @@ public class Prd2ApiProperties {
         private int llmCore = 3;
         private int llmMax = 6;
         private int llmQueue = 100;
+        /** SSE 进度推送调度线程数 */
+        private int streamThreads = 4;
+        /** 单实例 SSE 最大并发连接数，超出直接返回错误事件 */
+        private int streamMaxConnections = 200;
     }
 }

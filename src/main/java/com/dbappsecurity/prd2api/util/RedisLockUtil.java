@@ -37,6 +37,24 @@ public class RedisLockUtil {
         }
     }
 
+    /**
+     * 尝试加锁（看门狗模式：不指定租期，Redisson 自动续约，直到显式解锁或进程退出）
+     * <p>
+     * 适用于执行时间不可预估的长任务，避免固定租期到期后重复执行。
+     *
+     * @param key         锁 key
+     * @param waitSeconds 最长等待秒数，0 表示不等待
+     */
+    public boolean tryLock(String key, long waitSeconds) {
+        RLock lock = redissonClient.getLock(key);
+        try {
+            return lock.tryLock(waitSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "获取分布式锁被中断: " + key);
+        }
+    }
+
     public void unlock(String key) {
         RLock lock = redissonClient.getLock(key);
         try {

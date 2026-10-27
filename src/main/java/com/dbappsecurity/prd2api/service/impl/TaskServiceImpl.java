@@ -44,6 +44,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -94,12 +95,6 @@ public class TaskServiceImpl implements TaskService {
             LlmModelEnum.resolve(modelCode);
             String strategy = resolveStrategy(dto.getChunkStrategy());
 
-            int versionNo = 1;
-            Integer maxVersion = prdTaskMapper.selectMaxVersionNo(tenantId, meta.getFileMetaId());
-            if (maxVersion != null) {
-                versionNo = maxVersion + 1;
-            }
-
             PrdTaskCache cache = prdTaskCacheMapper.selectValidCache(
                     tenantId, meta.getFileMd5(), modelCode, strategy, LocalDateTime.now());
 
@@ -112,7 +107,6 @@ public class TaskServiceImpl implements TaskService {
             task.setTenantId(tenantId);
             task.setUserKey(userKey);
             task.setFileMetaId(meta.getFileMetaId());
-            task.setVersionNo(versionNo);
             task.setModelCode(modelCode);
             if (cache != null) {
                 task.setTaskStatus(TaskStatusEnum.SUCCESS.getCode());
@@ -123,11 +117,12 @@ public class TaskServiceImpl implements TaskService {
                 task.setTaskStatus(TaskStatusEnum.INIT.getCode());
                 task.setProgress(0);
             }
-            prdTaskMapper.insert(task);
+            insertWithVersion(task, tenantId, meta.getFileMetaId());
             metricUtil.taskCreated();
 
             if (cache != null) {
-                log.info("报告缓存命中，直接返回历史结果 taskId={} version={}", task.getTaskId(), versionNo);
+                log.info("报告缓存命中，直接返回历史结果 taskId={} version={}",
+                        task.getTaskId(), task.getVersionNo());
                 return TaskVO.from(prdTaskMapper.selectById(task.getTaskId()));
             }
 
@@ -136,7 +131,7 @@ public class TaskServiceImpl implements TaskService {
                     strategy, 1, TimeUnit.DAYS);
             agentService.executeAsync(task.getTaskId());
             log.info("任务已提交异步解析 taskId={} tenantId={} fileMetaId={} version={}",
-                    task.getTaskId(), tenantId, meta.getFileMetaId(), versionNo);
+                    task.getTaskId(), tenantId, meta.getFileMetaId(), task.getVersionNo());
             return TaskVO.from(prdTaskMapper.selectById(task.getTaskId()));
         } catch (BlockException e) {
             throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "任务创建请求过多，请稍后重试");
@@ -342,6 +337,10 @@ public class TaskServiceImpl implements TaskService {
 
     @Override
     public ExportFile loadExportFile(String token) {
+        // 限定凭证格式，避免任意字符串被用作 Redis key
+        if (StrUtil.isBlank(token) || !token.matches("^[a-fA-F0-9]{32}$")) {
+            throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID);
+        }
         String tokenValue = stringRedisTemplate.opsForValue().get(RedisKeyConstant.exportToken(token));
         if (StrUtil.isBlank(tokenValue)) {
             throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID);
@@ -389,6 +388,26 @@ public class TaskServiceImpl implements TaskService {
         fileService.deleteTenantFiles(tenantId);
         log.info("租户数据已清理 tenantId={} 任务数={}", tenantId, tasks.size());
         return tasks.size();
+    }
+
+    /**
+     * 版本号 = 当前最大值 + 1，依赖 (tenant_id, file_meta_id, version_no) 唯一索引兜底并发冲突
+     */
+    private void insertWithVersion(PrdTask task, String tenantId, String fileMetaId) {
+        for (int attempt = 0; ; attempt++) {
+            Integer maxVersion = prdTaskMapper.selectMaxVersionNo(tenantId, fileMetaId);
+            task.setVersionNo(maxVersion == null ? 1 : maxVersion + 1);
+            task.setTaskId(null);
+            try {
+                prdTaskMapper.insert(task);
+                return;
+            } catch (DuplicateKeyException e) {
+                if (attempt >= 2) {
+                    throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "任务版本号生成冲突，请稍后重试");
+                }
+                log.warn("任务版本号并发冲突，重试 attempt={} fileMetaId={}", attempt + 1, fileMetaId);
+            }
+        }
     }
 
     private String resolveStrategy(String chunkStrategy) {

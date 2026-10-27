@@ -48,7 +48,12 @@ com.dbappsecurity.prd2api
 
 ### 1. 依赖服务
 
-1. MySQL 8，执行 [schema.sql](src/main/resources/sql/schema.sql)（老库升级时补执行其中的 `audit_log` 建表语句即可，其余表结构无变更）
+1. MySQL 8，执行 [schema.sql](src/main/resources/sql/schema.sql)。老库升级时除 `audit_log` 建表外，还需补以下唯一索引（用于版本号与报告缓存的并发一致性）：
+
+```sql
+ALTER TABLE prd_task ADD UNIQUE KEY uk_tenant_file_version (tenant_id, file_meta_id, version_no);
+ALTER TABLE prd_task_cache ADD UNIQUE KEY uk_cache_key (tenant_id, file_md5, model_code, chunk_strategy);
+```
 2. Redis 6.2+
 3. Chroma 服务：`docker run -p 8000:8000 chromadb/chroma`（不可用时自动降级本地召回）
 4. OpenAI 兼容的 LLM / Embedding 接口
@@ -68,6 +73,8 @@ LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_API_KEY=sk-xxxx
 CHROMA_URL=http://127.0.0.1:8000
 UPLOAD_PATH=./data/upload
+# 生产环境强制携带身份 Header（缺失返回 401）
+REQUIRE_IDENTITY=false
 ```
 
 密钥一律通过环境变量注入，禁止提交到仓库。
@@ -79,6 +86,7 @@ mvn clean package -DskipTests
 java -jar target/prd2api.jar --spring.profiles.active=dev
 ```
 
+- 单元测试：`mvn test`（离线环境可用 `mvn -o test`）
 - Swagger：http://127.0.0.1:8080/swagger-ui/index.html
 - 健康探针：`/actuator/health`（含 liveness/readiness）
 - Prometheus 指标：`/actuator/prometheus`
@@ -89,10 +97,13 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 
 | Header | 说明 |
 | --- | --- |
-| `X-Tenant-Id` | 租户 ID，缺省 `default` |
-| `X-User-Key` | 用户标识，缺省 `anonymous` |
-| `X-User-Role` | `USER` / `ADMIN`，管理端接口强制 `ADMIN` |
+| `X-Tenant-Id` | 租户 ID，缺省 `default`；仅允许字母、数字、`_`、`-`，长度 1~64（参与存储路径拼接，非法值直接 400） |
+| `X-User-Key` | 用户标识，缺省 `anonymous`；仅允许字母、数字及 `_ . @ : -` |
+| `X-User-Role` | `USER` / `ADMIN`，仅 `ADMIN` 生效，其他值自动降级为 `USER`；`/api/admin/**` 强制 `ADMIN` |
 | `X-Trace-Id` | 可选，透传链路 ID，缺省自动生成 |
+
+`prd2api.security.require-identity=true`（生产 profile 默认开启）时缺失前两个 Header 直接 401。
+跨域来源由 `prd2api.security.allowed-origins` 控制，默认 `*` 仅供开发，生产务必配置具体域名。
 
 下载导出文件使用一次性 `exportToken`，有效期默认 300 秒，不依赖上述 Header。
 
@@ -147,6 +158,9 @@ prd2api:export:token:{exportToken}
 - 优雅停机：`server.shutdown=graceful`，线程池等待 30 秒
 - 指标：任务总数/成功/失败、LLM 调用耗时、token 消耗、RAG 召回耗时
 - 告警钩子：`TaskEventListener` 预留消息通知与告警平台对接点
+- 大文本保护：解析文本与分块缓存的 Redis 单值上限为 `prd2api.chunk.max-cache-chars`（默认 20 万字符），超限跳过缓存不影响解析
+- SSE：推送线程数与单实例最大连接数分别由 `prd2api.async.stream-threads`、`stream-max-connections` 控制
+- 生产 profile 仅暴露 `health` 与 `prometheus` 两个 actuator 端点
 
 ## 已知边界
 

@@ -20,6 +20,8 @@ import okhttp3.Response;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
@@ -241,7 +243,9 @@ public class ChromaVectorService {
     }
 
     private String tenantQuery() {
-        return "?tenant=" + properties.getRag().getChromaTenant() + "&database=" + properties.getRag().getChromaDatabase();
+        String tenant = URLEncoder.encode(properties.getRag().getChromaTenant(), StandardCharsets.UTF_8);
+        String database = URLEncoder.encode(properties.getRag().getChromaDatabase(), StandardCharsets.UTF_8);
+        return "?tenant=" + tenant + "&database=" + database;
     }
 
     /**

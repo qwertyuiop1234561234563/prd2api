@@ -15,7 +15,6 @@
         FROM prd_task
         WHERE tenant_id = #{tenantId}
           AND file_meta_id = #{fileMetaId}
-          AND deleted = 0
     </select>
 
     <select id="statOverview" resultType="com.dbappsecurity.prd2api.vo.TaskStatsVO">

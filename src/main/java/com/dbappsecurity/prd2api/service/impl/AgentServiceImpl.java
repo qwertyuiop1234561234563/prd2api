@@ -1,6 +1,7 @@
 package com.dbappsecurity.prd2api.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.dbappsecurity.prd2api.agent.dto.AgentContext;
 import com.dbappsecurity.prd2api.agent.service.Stage1BusinessUnderstandService;
@@ -50,7 +51,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AgentServiceImpl implements AgentService {
 
-    private static final long LOCK_LEASE_SECONDS = 1800L;
     private static final int ERROR_MSG_MAX_LENGTH = 900;
 
     private final PrdTaskMapper prdTaskMapper;
@@ -94,7 +94,8 @@ public class AgentServiceImpl implements AgentService {
             return;
         }
         String lockKey = RedisKeyConstant.taskLock(taskId);
-        if (!redisLockUtil.tryLock(lockKey, 0, LOCK_LEASE_SECONDS)) {
+        // 看门狗续约：流水线耗时不可预估，避免固定租期到期后同一任务被重复执行
+        if (!redisLockUtil.tryLock(lockKey, 0)) {
             log.warn("任务已在执行中，忽略重复触发 taskId={}", taskId);
             return;
         }
@@ -273,6 +274,12 @@ public class AgentServiceImpl implements AgentService {
      */
     private void writeCache(PrdTask task, FileMeta meta, String strategy, String report) {
         try {
+            // 同一 文件+模型+策略 只保留最新一份有效缓存，避免重复执行导致缓存表膨胀
+            prdTaskCacheMapper.delete(new LambdaQueryWrapper<PrdTaskCache>()
+                    .eq(PrdTaskCache::getTenantId, task.getTenantId())
+                    .eq(PrdTaskCache::getFileMd5, meta.getFileMd5())
+                    .eq(PrdTaskCache::getModelCode, task.getModelCode())
+                    .eq(PrdTaskCache::getChunkStrategy, strategy));
             PrdTaskCache cache = new PrdTaskCache();
             cache.setTenantId(task.getTenantId());
             cache.setFileMd5(meta.getFileMd5());

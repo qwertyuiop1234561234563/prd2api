@@ -80,7 +80,7 @@ public class FileServiceImpl implements FileService {
             if (file.getSize() > FileUtil.MAX_FILE_SIZE) {
                 throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "文件超过 20MB 限制");
             }
-            String fileName = StrUtil.blankToDefault(file.getOriginalFilename(), "unknown");
+            String fileName = FileUtil.sanitizeFileName(file.getOriginalFilename());
             String suffix = FileUtil.checkSuffix(fileName);
             byte[] bytes;
             try {
@@ -100,13 +100,13 @@ public class FileServiceImpl implements FileService {
                 return FileUploadVO.from(exists, true);
             }
 
-            tenantQuotaService.checkUploadQuota(tenantId);
-
             // 解析文本并缓存，供任务解析与相似度查重复用
             String text = DocParseUtil.parse(bytes, suffix);
             if (StrUtil.isBlank(text)) {
                 throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文档解析内容为空，请检查文件是否可读");
             }
+            // 解析成功后再占用上传配额，避免不可读文件白白消耗次数
+            tenantQuotaService.checkUploadQuota(tenantId);
             cacheText(md5, text);
             SimilarResult similar = findSimilarDocument(tenantId, text, md5);
 
@@ -169,7 +169,9 @@ public class FileServiceImpl implements FileService {
         if (StrUtil.isBlank(text)) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文档解析内容为空，请检查文件是否可读");
         }
-        stringRedisTemplate.opsForValue().set(cacheKey, text, TEXT_CACHE_DAYS, TimeUnit.DAYS);
+        if (cacheable(text)) {
+            stringRedisTemplate.opsForValue().set(cacheKey, text, TEXT_CACHE_DAYS, TimeUnit.DAYS);
+        }
         return text;
     }
 
@@ -180,9 +182,10 @@ public class FileServiceImpl implements FileService {
             throw new BizException(BizErrorCodeEnum.NOT_FOUND, "文件不存在");
         }
         checkTenant(meta.getTenantId());
+        // 先完成数据库逻辑删除，外部清理（向量/磁盘）失败仅告警，由定时任务兜底
+        fileMetaMapper.deleteById(fileMetaId);
         dropFileVectors(meta.getTenantId(), meta.getFileMetaId());
         FileUtil.deleteLocalQuietly(meta.getFileStorePath());
-        fileMetaMapper.deleteById(fileMetaId);
         stringRedisTemplate.delete(RedisKeyConstant.docText(meta.getFileMd5()));
         log.info("文件已删除 fileMetaId={} operatorTenant={}", fileMetaId, TenantContextUtil.getTenantId());
     }
@@ -281,8 +284,20 @@ public class FileServiceImpl implements FileService {
     }
 
     private void cacheText(String md5, String text) {
+        if (!cacheable(text)) {
+            log.debug("文档文本过大，跳过 Redis 缓存 md5={} length={}", md5, text.length());
+            return;
+        }
         stringRedisTemplate.opsForValue()
                 .set(RedisKeyConstant.docText(md5), text, TEXT_CACHE_DAYS, TimeUnit.DAYS);
+    }
+
+    /**
+     * 超过配置上限的文本不入 Redis，避免单条大 value 造成内存与带宽压力
+     */
+    private boolean cacheable(String text) {
+        int maxChars = properties.getChunk().getMaxCacheChars();
+        return maxChars <= 0 || text.length() <= maxChars;
     }
 
     /**

@@ -92,24 +92,36 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
     private String invokeWithRetry(String systemPrompt, String userPrompt, String modelName) {
         int maxRetry = Math.max(0, properties.getLlm().getMaxRetry());
         long backoff = properties.getLlm().getRetryBackoffMs();
-        RuntimeException lastError = null;
+        RetryableLlmException lastError = null;
         for (int attempt = 0; attempt <= maxRetry; attempt++) {
             try {
                 return callOnce(systemPrompt, userPrompt, modelName);
-            } catch (BizException e) {
-                // 配额/参数类异常直接抛出，重试无意义
-                throw e;
-            } catch (RuntimeException e) {
+            } catch (RetryableLlmException e) {
+                // 网络抖动、超时、429、5xx 才重试
                 lastError = e;
-                log.warn("LLM 调用失败 attempt={}/{} msg={}", attempt + 1, maxRetry + 1, e.getMessage());
+                log.warn("LLM 可重试失败 attempt={}/{} msg={}", attempt + 1, maxRetry + 1, e.getMessage());
                 if (attempt < maxRetry) {
                     sleep(backoff * (long) Math.pow(2, attempt));
                 }
             }
+            // 其余 BizException（配额、鉴权、参数）直接抛出，由外层处理
         }
         throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
                 "LLM 调用失败（已重试 " + maxRetry + " 次）: "
                         + (lastError == null ? "unknown" : lastError.getMessage()));
+    }
+
+    /**
+     * 可重试异常：仅用于网络异常、429 与 5xx，区别于不可重试的业务异常
+     */
+    private static class RetryableLlmException extends RuntimeException {
+        RetryableLlmException(String message) {
+            super(message);
+        }
+
+        RetryableLlmException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
     private String callOnce(String systemPrompt, String userPrompt, String modelName) {
@@ -142,11 +154,16 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
             httpCode = response.code();
             responseBody = response.body() == null ? "" : response.body().string();
         } catch (Exception e) {
-            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "LLM 网络调用异常: " + e.getMessage(), e);
+            throw new RetryableLlmException("LLM 网络调用异常: " + e.getMessage(), e);
         } finally {
             metricUtil.llmLatency(System.currentTimeMillis() - start);
         }
+        if (httpCode == 429 || httpCode >= 500) {
+            throw new RetryableLlmException("LLM 服务暂时不可用 http=" + httpCode
+                    + " body=" + StrUtil.maxLength(responseBody, 300));
+        }
         if (httpCode < 200 || httpCode >= 300) {
+            // 4xx 多为鉴权/参数问题，重试无意义
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
                     "LLM 调用返回异常 http=" + httpCode + " body=" + StrUtil.maxLength(responseBody, 300));
         }

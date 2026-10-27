@@ -18,10 +18,12 @@ CREATE TABLE IF NOT EXISTS `prd_task` (
   `finish_time` DATETIME NULL,
   `deleted` TINYINT DEFAULT 0 COMMENT '逻辑删除 0未删1已删',
   PRIMARY KEY (`task_id`),
+  UNIQUE KEY `uk_tenant_file_version`(`tenant_id`,`file_meta_id`,`version_no`),
   KEY `idx_tenant_id`(`tenant_id`),
   KEY `idx_user_key`(`user_key`),
   KEY `idx_status`(`task_status`),
-  KEY `idx_file_meta`(`file_meta_id`)
+  KEY `idx_file_meta`(`file_meta_id`),
+  KEY `idx_tenant_status`(`tenant_id`,`task_status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'PRD解析任务主表';
 
 CREATE TABLE IF NOT EXISTS `file_meta` (
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS `prd_task_cache` (
   `cache_result_markdown` LONGTEXT NOT NULL,
   `expire_time` DATETIME NOT NULL,
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
-  KEY `idx_cache_key`(`tenant_id`,`file_md5`,`model_code`,`chunk_strategy`)
+  UNIQUE KEY `uk_cache_key`(`tenant_id`,`file_md5`,`model_code`,`chunk_strategy`),
+  KEY `idx_expire_time`(`expire_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '报告缓存表，相同条件直接返回结果';
 
 CREATE TABLE IF NOT EXISTS `tenant_quota` (

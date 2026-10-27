@@ -83,6 +83,34 @@ public final class FileUtil {
     }
 
     /**
+     * 文件名清洗：去掉路径部分与控制字符，限制长度并保留后缀。
+     * <p>
+     * 原始文件名仅用于展示与导出，不参与落盘路径，但仍需清洗避免日志注入与超长入库。
+     */
+    public static String sanitizeFileName(String fileName) {
+        if (StrUtil.isBlank(fileName)) {
+            return "unknown";
+        }
+        String name = fileName.replace('\\', '/');
+        name = name.substring(name.lastIndexOf('/') + 1);
+        name = name.replaceAll("[\\u0000-\\u001F\\u007F]", "").trim();
+        name = name.replace("..", "_");
+        if (StrUtil.isBlank(name) || ".".equals(name)) {
+            return "unknown";
+        }
+        int dot = name.lastIndexOf('.');
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        String suffix = dot > 0 ? name.substring(dot) : "";
+        if (stem.length() > 100) {
+            stem = stem.substring(0, 100);
+        }
+        if (suffix.length() > 20) {
+            suffix = suffix.substring(0, 20);
+        }
+        return stem + suffix;
+    }
+
+    /**
      * 病毒扫描钩子：预留对接企业病毒扫描服务，返回 false 表示命中病毒
      */
     public static boolean virusScan(byte[] bytes, String fileName) {
@@ -97,11 +125,21 @@ public final class FileUtil {
      */
     public static String saveLocal(String basePath, String tenantId, byte[] bytes, String suffix) {
         try {
-            Path dir = Paths.get(basePath, tenantId, LocalDate.now().format(DATE_DIR));
+            Path base = Paths.get(basePath).toAbsolutePath().normalize();
+            String safeTenant = StrUtil.isBlank(tenantId)
+                    ? "unknown"
+                    : tenantId.replaceAll("[^A-Za-z0-9_-]", "_");
+            Path dir = base.resolve(safeTenant).resolve(LocalDate.now().format(DATE_DIR)).normalize();
+            // 双保险：即使上游校验遗漏，也禁止落盘到基础目录之外
+            if (!dir.startsWith(base)) {
+                throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "非法的存储目录");
+            }
             Files.createDirectories(dir);
             Path target = dir.resolve(UUID.randomUUID().toString().replace("-", "") + "." + suffix);
             Files.write(target, bytes);
             return target.toAbsolutePath().toString();
+        } catch (BizException e) {
+            throw e;
         } catch (IOException e) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文件落盘失败: " + e.getMessage(), e);
         }

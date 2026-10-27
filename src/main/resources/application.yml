@@ -66,6 +66,7 @@ prd2api:
     fixed-size: 800
     overlap: 150
     max-llm-chars: 60000
+    max-cache-chars: 200000
   rag:
     enable: true
     chroma-url: ${CHROMA_URL:http://127.0.0.1:8000}
@@ -90,6 +91,10 @@ prd2api:
     enable: true
     words: 身份证号,银行卡号,密码,密钥,secret,password
   security:
+    # 是否强制要求 X-Tenant-Id / X-User-Key（生产建议 true）
+    require-identity: ${REQUIRE_IDENTITY:false}
+    # 允许的跨域来源，留空表示 *，生产建议填写具体域名
+    allowed-origins: []
     # IP 黑名单，命中直接拒绝
     ip-blacklist: []
     # 接口路径黑名单（前缀匹配）
@@ -109,6 +114,8 @@ prd2api:
     llm-core: 3
     llm-max: 6
     llm-queue: 100
+    stream-threads: 4
+    stream-max-connections: 200
 
 springdoc:
   api-docs:
