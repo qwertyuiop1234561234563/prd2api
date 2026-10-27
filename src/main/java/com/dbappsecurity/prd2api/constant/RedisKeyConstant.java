@@ -5,6 +5,7 @@ package com.dbappsecurity.prd2api.constant;
  * <pre>
  * prd2api:task:lock:{taskId}              # 任务分布式锁
  * prd2api:task:context:{taskId}           # Agent 上下文缓存
+ * prd2api:task:cancel:{taskId}            # 任务取消标记（流水线阶段间检查）
  * prd2api:rag:embedding:{chunkMd5}        # 向量缓存
  * prd2api:rag:collection:{taskId}         # 任务对应 Chroma collectionId
  * prd2api:rag:chunks:{taskId}              # 任务分块原文缓存
@@ -22,6 +23,7 @@ public final class RedisKeyConstant {
 
     public static final String TASK_LOCK_PREFIX = "prd2api:task:lock:";
     public static final String TASK_CONTEXT_PREFIX = "prd2api:task:context:";
+    public static final String TASK_CANCEL_PREFIX = "prd2api:task:cancel:";
     public static final String RAG_EMBEDDING_PREFIX = "prd2api:rag:embedding:";
     public static final String RAG_COLLECTION_PREFIX = "prd2api:rag:collection:";
     public static final String RAG_CHUNKS_PREFIX = "prd2api:rag:chunks:";
@@ -37,6 +39,10 @@ public final class RedisKeyConstant {
 
     public static String taskContext(String taskId) {
         return TASK_CONTEXT_PREFIX + taskId;
+    }
+
+    public static String taskCancel(String taskId) {
+        return TASK_CANCEL_PREFIX + taskId;
     }
 
     public static String ragEmbedding(String chunkMd5) {

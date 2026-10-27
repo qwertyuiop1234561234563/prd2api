@@ -17,4 +17,34 @@
           AND file_meta_id = #{fileMetaId}
           AND deleted = 0
     </select>
+
+    <select id="statOverview" resultType="com.dbappsecurity.prd2api.vo.TaskStatsVO">
+        SELECT COUNT(1)                                                        AS total,
+               COALESCE(SUM(task_status = 'SUCCESS'), 0)                       AS success,
+               COALESCE(SUM(task_status = 'FAIL'), 0)                          AS fail,
+               COALESCE(SUM(task_status = 'CANCELED'), 0)                      AS canceled,
+               COALESCE(SUM(DATE(create_time) = CURDATE()), 0)                 AS todayTotal,
+               COALESCE(AVG(CASE WHEN finish_time IS NOT NULL
+                                 THEN TIMESTAMPDIFF(SECOND, create_time, finish_time) END), 0) AS avgDurationSeconds
+        FROM prd_task
+        WHERE deleted = 0
+        <if test="tenantId != null and tenantId != ''">
+            AND tenant_id = #{tenantId}
+        </if>
+    </select>
+
+    <select id="statDaily" resultType="com.dbappsecurity.prd2api.vo.TaskDailyStatVO">
+        SELECT DATE_FORMAT(create_time, '%Y-%m-%d')            AS day,
+               COUNT(1)                                        AS total,
+               COALESCE(SUM(task_status = 'SUCCESS'), 0)       AS success,
+               COALESCE(SUM(task_status = 'FAIL'), 0)          AS fail
+        FROM prd_task
+        WHERE deleted = 0
+          AND create_time &gt;= #{startTime}
+        <if test="tenantId != null and tenantId != ''">
+            AND tenant_id = #{tenantId}
+        </if>
+        GROUP BY DATE_FORMAT(create_time, '%Y-%m-%d')
+        ORDER BY day
+    </select>
 </mapper>

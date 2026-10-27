@@ -34,6 +34,10 @@ public class MetricUtil {
         counter("fail").increment();
     }
 
+    public void taskCanceled() {
+        counter("canceled").increment();
+    }
+
     private Counter counter(String status) {
         return Counter.builder(TASK_TOTAL)
                 .description("PRD解析任务数量")

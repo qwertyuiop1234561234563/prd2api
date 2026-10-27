@@ -30,11 +30,15 @@ import com.dbappsecurity.prd2api.service.FileService;
 import com.dbappsecurity.prd2api.service.RagService;
 import com.dbappsecurity.prd2api.service.TaskService;
 import com.dbappsecurity.prd2api.service.TenantQuotaService;
+import com.dbappsecurity.prd2api.util.DiffUtil;
 import com.dbappsecurity.prd2api.util.ExportUtil;
 import com.dbappsecurity.prd2api.util.MetricUtil;
+import com.dbappsecurity.prd2api.util.ReportParseUtil;
 import com.dbappsecurity.prd2api.util.TenantContextUtil;
 import com.dbappsecurity.prd2api.util.ChunkUtil;
 import com.dbappsecurity.prd2api.vo.ReportExportVO;
+import com.dbappsecurity.prd2api.vo.ReviewIssueVO;
+import com.dbappsecurity.prd2api.vo.TaskDiffVO;
 import com.dbappsecurity.prd2api.vo.TaskVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -198,11 +202,15 @@ public class TaskServiceImpl implements TaskService {
         }
         checkTenant(task.getTenantId());
         if (!TaskStatusEnum.FAIL.getCode().equals(task.getTaskStatus())
-                && !TaskStatusEnum.INIT.getCode().equals(task.getTaskStatus())) {
-            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "仅失败或初始状态的任务支持重试");
+                && !TaskStatusEnum.INIT.getCode().equals(task.getTaskStatus())
+                && !TaskStatusEnum.CANCELED.getCode().equals(task.getTaskStatus())) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "仅失败、取消或初始状态的任务支持重试");
         }
         String modelCode = StrUtil.blankToDefault(dto.getModelCode(), task.getModelCode());
         LlmModelEnum.resolve(modelCode);
+
+        // 重试前清除取消标记，避免重试任务立刻被中断
+        stringRedisTemplate.delete(RedisKeyConstant.taskCancel(task.getTaskId()));
 
         prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
                 .eq(PrdTask::getTaskId, task.getTaskId())
@@ -213,6 +221,63 @@ public class TaskServiceImpl implements TaskService {
                 .set(PrdTask::getModelCode, modelCode));
         agentService.executeAsync(task.getTaskId());
         log.info("任务已重新提交 taskId={} modelCode={}", task.getTaskId(), modelCode);
+    }
+
+    @Override
+    public void cancelTask(String taskId) {
+        PrdTask task = loadAccessibleTask(taskId);
+        String status = task.getTaskStatus();
+        if (TaskStatusEnum.SUCCESS.getCode().equals(status)
+                || TaskStatusEnum.FAIL.getCode().equals(status)
+                || TaskStatusEnum.CANCELED.getCode().equals(status)) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "任务已结束，无需取消");
+        }
+        // 取消标记保留 1 天，流水线在阶段边界读取
+        stringRedisTemplate.opsForValue().set(RedisKeyConstant.taskCancel(taskId), "1", 1, TimeUnit.DAYS);
+        if (TaskStatusEnum.INIT.getCode().equals(status)) {
+            // 尚未被调度器取出，直接置为取消态，执行线程启动后会再次识别并跳过
+            prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
+                    .eq(PrdTask::getTaskId, taskId)
+                    .set(PrdTask::getTaskStatus, TaskStatusEnum.CANCELED.getCode())
+                    .set(PrdTask::getErrorMsg, "任务已被用户取消")
+                    .set(PrdTask::getFinishTime, LocalDateTime.now()));
+        }
+        metricUtil.taskCanceled();
+        log.info("任务取消标记已写入 taskId={} currentStatus={}", taskId, status);
+    }
+
+    @Override
+    public TaskDiffVO diffReport(String baseTaskId, String compareTaskId) {
+        if (StrUtil.isBlank(compareTaskId) || baseTaskId.equals(compareTaskId)) {
+            throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "请选择两个不同的任务版本进行对比");
+        }
+        PrdTask base = loadAccessibleTask(baseTaskId);
+        PrdTask compare = loadAccessibleTask(compareTaskId);
+        if (!base.getFileMetaId().equals(compare.getFileMetaId())) {
+            throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "仅支持同一文档的不同版本之间对比");
+        }
+        checkExportable(base);
+        checkExportable(compare);
+
+        DiffUtil.DiffResult result = DiffUtil.diff(base.getResultMarkdown(), compare.getResultMarkdown());
+        TaskDiffVO vo = new TaskDiffVO();
+        vo.setBaseTaskId(base.getTaskId());
+        vo.setBaseVersion(base.getVersionNo());
+        vo.setCompareTaskId(compare.getTaskId());
+        vo.setCompareVersion(compare.getVersionNo());
+        vo.setAddedLines(result.added());
+        vo.setRemovedLines(result.removed());
+        vo.setUnchangedLines(result.unchanged());
+        vo.setTruncated(result.truncated());
+        vo.setDiffText(result.diffText());
+        return vo;
+    }
+
+    @Override
+    public List<ReviewIssueVO> extractIssues(String taskId) {
+        PrdTask task = loadAccessibleTask(taskId);
+        checkExportable(task);
+        return ReportParseUtil.parseIssues(task.getResultMarkdown());
     }
 
     @Override
@@ -305,6 +370,7 @@ public class TaskServiceImpl implements TaskService {
         prdTaskMapper.deleteById(taskId);
         ragService.dropTaskIndex(taskId);
         stringRedisTemplate.delete(RedisKeyConstant.taskContext(taskId));
+        stringRedisTemplate.delete(RedisKeyConstant.taskCancel(taskId));
         log.info("任务已删除 taskId={} operatorTenant={}", taskId, TenantContextUtil.getTenantId());
     }
 
@@ -349,6 +415,28 @@ public class TaskServiceImpl implements TaskService {
     private void checkTenant(String tenantId) {
         if (!TenantContextUtil.isAdmin() && !tenantId.equals(TenantContextUtil.requireTenantId())) {
             throw new BizException(BizErrorCodeEnum.FORBIDDEN, "无权访问其他租户数据");
+        }
+    }
+
+    /**
+     * 加载任务并校验租户归属
+     */
+    private PrdTask loadAccessibleTask(String taskId) {
+        PrdTask task = prdTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+        return task;
+    }
+
+    /**
+     * 报告类操作前置校验：任务成功且报告非空
+     */
+    private void checkExportable(PrdTask task) {
+        if (!TaskStatusEnum.SUCCESS.getCode().equals(task.getTaskStatus())
+                || StrUtil.isBlank(task.getResultMarkdown())) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "任务尚未解析成功，暂无报告内容");
         }
     }
 }

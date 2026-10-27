@@ -26,6 +26,7 @@
         <sentinel.version>1.8.6</sentinel.version>
         <springdoc.version>2.5.0</springdoc.version>
         <spring-cloud-context.version>4.1.1</spring-cloud-context.version>
+        <aspectj.version>1.9.25.1</aspectj.version>
     </properties>
 
     <dependencies>
@@ -45,6 +46,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <!-- 操作审计：AOP 切面所需（spring-boot-starter-aop 的核心织入包） -->
+        <dependency>
+            <groupId>org.aspectj</groupId>
+            <artifactId>aspectjweaver</artifactId>
+            <version>${aspectj.version}</version>
         </dependency>
         <dependency>
             <groupId>io.micrometer</groupId>

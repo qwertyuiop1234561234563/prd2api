@@ -103,6 +103,11 @@ public class AgentServiceImpl implements AgentService {
         TenantContextUtil.set(task.getTenantId(), task.getUserKey(), TenantContextUtil.USER_ROLE);
         long start = System.currentTimeMillis();
         try {
+            if (isCanceled(taskId) || TaskStatusEnum.CANCELED.getCode().equals(task.getTaskStatus())) {
+                updateCanceled(taskId);
+                log.info("任务已取消，跳过执行 taskId={}", taskId);
+                return;
+            }
             updateProgress(taskId, 5);
             FileMeta meta = fileMetaMapper.selectById(task.getFileMetaId());
             if (meta == null) {
@@ -133,13 +138,25 @@ public class AgentServiceImpl implements AgentService {
 
             context.setStage1Output(stage1Service.execute(context));
             updateProgress(taskId, 40);
+            if (stopIfCanceled(taskId)) {
+                return;
+            }
             context.setStage2Output(stage2Service.execute(context));
             updateProgress(taskId, 58);
+            if (stopIfCanceled(taskId)) {
+                return;
+            }
             context.setStage3Output(stage3Service.execute(context));
             updateProgress(taskId, 74);
+            if (stopIfCanceled(taskId)) {
+                return;
+            }
             String report = stage4Service.execute(context);
             if (StrUtil.isBlank(report)) {
                 throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "阶段4输出为空，评审报告生成失败");
+            }
+            if (stopIfCanceled(taskId)) {
+                return;
             }
 
             updateSuccess(taskId, report);
@@ -221,6 +238,33 @@ public class AgentServiceImpl implements AgentService {
                 .eq(PrdTask::getTaskId, taskId)
                 .set(PrdTask::getTaskStatus, TaskStatusEnum.FAIL.getCode())
                 .set(PrdTask::getErrorMsg, errorMsg)
+                .set(PrdTask::getFinishTime, LocalDateTime.now()));
+    }
+
+    /**
+     * 阶段边界检查取消标记，命中则终止流水线
+     *
+     * @return true 表示已取消，调用方应直接结束
+     */
+    private boolean stopIfCanceled(String taskId) {
+        if (!isCanceled(taskId)) {
+            return false;
+        }
+        updateCanceled(taskId);
+        log.info("任务被用户取消，流水线已中断 taskId={}", taskId);
+        return true;
+    }
+
+    private boolean isCanceled(String taskId) {
+        return StrUtil.isNotBlank(
+                stringRedisTemplate.opsForValue().get(RedisKeyConstant.taskCancel(taskId)));
+    }
+
+    private void updateCanceled(String taskId) {
+        prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
+                .eq(PrdTask::getTaskId, taskId)
+                .set(PrdTask::getTaskStatus, TaskStatusEnum.CANCELED.getCode())
+                .set(PrdTask::getErrorMsg, "任务已被用户取消")
                 .set(PrdTask::getFinishTime, LocalDateTime.now()));
     }
 

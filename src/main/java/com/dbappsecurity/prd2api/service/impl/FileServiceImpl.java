@@ -5,11 +5,13 @@ import com.alibaba.csp.sentinel.Entry;
 import com.alibaba.csp.sentinel.SphU;
 import com.alibaba.csp.sentinel.slots.block.BlockException;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dbappsecurity.prd2api.common.BizException;
 import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
 import com.dbappsecurity.prd2api.config.SentinelConfig;
 import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import com.dbappsecurity.prd2api.constant.RedisKeyConstant;
+import com.dbappsecurity.prd2api.dto.FileQueryDTO;
 import com.dbappsecurity.prd2api.entity.FileMeta;
 import com.dbappsecurity.prd2api.entity.PrdTask;
 import com.dbappsecurity.prd2api.mapper.FileMetaMapper;
@@ -23,6 +25,7 @@ import com.dbappsecurity.prd2api.util.FileUtil;
 import com.dbappsecurity.prd2api.util.RateLimitUtil;
 import com.dbappsecurity.prd2api.util.SimilarityUtil;
 import com.dbappsecurity.prd2api.util.TenantContextUtil;
+import com.dbappsecurity.prd2api.vo.FileMetaVO;
 import com.dbappsecurity.prd2api.vo.FileUploadVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -132,6 +135,23 @@ public class FileServiceImpl implements FileService {
                 entry.exit();
             }
         }
+    }
+
+    @Override
+    public Page<FileMetaVO> pageFiles(FileQueryDTO dto) {
+        LambdaQueryWrapper<FileMeta> wrapper = new LambdaQueryWrapper<>();
+        if (!TenantContextUtil.isAdmin()) {
+            wrapper.eq(FileMeta::getTenantId, TenantContextUtil.requireTenantId());
+        } else if (StrUtil.isNotBlank(dto.getTenantId())) {
+            wrapper.eq(FileMeta::getTenantId, dto.getTenantId());
+        }
+        wrapper.like(StrUtil.isNotBlank(dto.getFileName()), FileMeta::getFileName, dto.getFileName())
+                .orderByDesc(FileMeta::getCreateTime);
+
+        Page<FileMeta> page = fileMetaMapper.selectPage(new Page<>(dto.getPageNum(), dto.getPageSize()), wrapper);
+        Page<FileMetaVO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        result.setRecords(page.getRecords().stream().map(FileMetaVO::from).toList());
+        return result;
     }
 
     @Override

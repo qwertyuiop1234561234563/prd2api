@@ -28,7 +28,7 @@ public class TaskVO {
     @Schema(description = "文档版本号")
     private Integer versionNo;
 
-    @Schema(description = "任务状态 INIT/PROCESS/SUCCESS/FAIL")
+    @Schema(description = "任务状态 INIT/PROCESS/SUCCESS/FAIL/CANCELED")
     private String taskStatus;
 
     @Schema(description = "任务进度 0~100")

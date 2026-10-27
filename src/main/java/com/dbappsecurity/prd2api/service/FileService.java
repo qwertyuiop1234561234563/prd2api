@@ -1,6 +1,9 @@
 package com.dbappsecurity.prd2api.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dbappsecurity.prd2api.dto.FileQueryDTO;
 import com.dbappsecurity.prd2api.dto.UploadFileDTO;
+import com.dbappsecurity.prd2api.vo.FileMetaVO;
 import com.dbappsecurity.prd2api.vo.FileUploadVO;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -13,6 +16,11 @@ public interface FileService {
      * 上传文件：后缀 + 魔数双校验、md5 去重、本地/对象存储落盘、元信息入库
      */
     FileUploadVO upload(MultipartFile file);
+
+    /**
+     * 分页查询文件元信息（租户隔离）
+     */
+    Page<FileMetaVO> pageFiles(FileQueryDTO dto);
 
     /**
      * 解析文档文本（带 Redis 缓存），供 Agent 流水线使用

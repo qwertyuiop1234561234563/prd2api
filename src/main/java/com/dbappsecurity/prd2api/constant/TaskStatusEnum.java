@@ -13,7 +13,8 @@ public enum TaskStatusEnum {
     INIT("INIT", "已创建"),
     PROCESS("PROCESS", "解析中"),
     SUCCESS("SUCCESS", "解析成功"),
-    FAIL("FAIL", "解析失败");
+    FAIL("FAIL", "解析失败"),
+    CANCELED("CANCELED", "已取消");
 
     private final String code;
     private final String desc;

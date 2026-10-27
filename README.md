@@ -21,6 +21,8 @@ SpringBoot 3.2.5 | MyBatis-Plus 3.5.5 | MySQL 8 | Redis 6.2+ | Redisson | Sentin
 | RAG | 单任务独立 Chroma collection（租户 + 任务双重隔离）；Embedding 多模型切换；topK 可配；chunk md5 向量缓存；召回失败自动降级本地相似度 |
 | Agent 流水线 | 4 阶段串行：业务理解 → 风险扫描 → 结构生成 → 汇总格式化；LLM 超时/指数退避重试/Sentinel 熔断；单阶段失败任务标记 FAIL；支持人工重试与追加追问 |
 | 任务与导出 | 全生命周期异步；进度追踪；版本快照；md/html/docx 导出 + 一次性临时凭证 |
+| 任务协作 | SSE 实时进度推送；任务取消（阶段边界中断）；同文档多版本报告 diff；待确认清单结构化抽取 |
+| 管理与审计 | 统计大盘（总览 / 日趋势 / token Top 租户）；操作审计（AOP 注解 + 租户隔离查询 + 过期清理） |
 | 治理与可观测 | Sentinel 限流、Redis 滑动窗口限流、Redisson 分布式锁、IP/接口黑名单、敏感词过滤；MDC traceId；Micrometer 指标；K8s 健康探针；配置热加载；优雅停机 |
 
 ## 包结构
@@ -28,12 +30,14 @@ SpringBoot 3.2.5 | MyBatis-Plus 3.5.5 | MySQL 8 | Redis 6.2+ | Redisson | Sentin
 ```
 com.dbappsecurity.prd2api
 ├── controller      TaskController / FileController / RagController / AdminController
-├── service(.impl)  Task / File / Rag / Agent / LlmInvoke / TenantQuota
-├── mapper          PrdTask / PrdTaskCache / TenantQuota / FileMeta（+ resources/mapper/*.xml）
-├── entity          PrdTask / PrdTaskCache / TenantQuota / FileMeta
+├── service(.impl)  Task / File / Rag / Agent / LlmInvoke / TenantQuota / TaskStream / Stats / AuditLog
+├── mapper          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog（+ resources/mapper/*.xml）
+├── entity          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog
 ├── dto / vo        请求参数与返回视图
+├── annotation      @Audit 操作审计注解
+├── aspect          AuditLogAspect 审计切面
 ├── config          线程池、异常、WebMvc、Redisson、Sentinel、OpenAPI、OkHttp、刷新、定时清理
-├── util            TraceId / TenantContext / File / Chunk / DocParse / Similarity / Sensitive / Metric / ContextCompress / Export / RedisLock / RateLimit
+├── util            TraceId / TenantContext / File / Chunk / DocParse / Similarity / Sensitive / Metric / ContextCompress / Export / RedisLock / RateLimit / Diff / ReportParse
 ├── constant        提示词、任务状态、Redis Key、模型、错误码
 ├── rag             EmbeddingService / ChromaVectorService / RagRetrieveService
 ├── agent           dto.AgentContext + 4 个 Stage service
@@ -44,7 +48,7 @@ com.dbappsecurity.prd2api
 
 ### 1. 依赖服务
 
-1. MySQL 8，执行 [schema.sql](src/main/resources/sql/schema.sql)
+1. MySQL 8，执行 [schema.sql](src/main/resources/sql/schema.sql)（老库升级时补执行其中的 `audit_log` 建表语句即可，其余表结构无变更）
 2. Redis 6.2+
 3. Chroma 服务：`docker run -p 8000:8000 chromadb/chroma`（不可用时自动降级本地召回）
 4. OpenAI 兼容的 LLM / Embedding 接口
@@ -97,11 +101,16 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/file/upload` | 上传文件（multipart，字段 `file`） |
+| GET | `/api/file/page` | 文件分页（按租户 / 文件名） |
 | DELETE | `/api/file/{fileMetaId}` | 删除文件 |
 | POST | `/api/task/create` | 创建解析任务（异步） |
 | GET | `/api/task/{taskId}` | 任务详情 + 报告 |
 | GET | `/api/task/page` | 任务分页（按状态 / fileMetaId 回溯多版本） |
 | POST | `/api/task/retry` | 重试失败任务（可换模型） |
+| POST | `/api/task/{taskId}/cancel` | 取消任务（阶段边界中断，状态置 CANCELED，可重试） |
+| GET | `/api/task/{taskId}/stream` | SSE 实时进度（每 1s 推送，终态自动关闭） |
+| GET | `/api/task/{taskId}/diff?otherTaskId=` | 同一文档两版本报告 diff |
+| GET | `/api/task/{taskId}/issues` | 结构化待确认清单（✅ / ❓ / ⚠️） |
 | POST | `/api/task/chat` | 追加追问并回写报告 |
 | GET | `/api/task/{taskId}/export?format=md\|html\|docx` | 生成导出文件，返回临时凭证 |
 | GET | `/api/task/export/download?token=xxx` | 下载导出文件 |
@@ -109,6 +118,8 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | GET | `/api/rag/search?taskId=&query=&topK=` | 召回调试 |
 | GET | `/api/rag/status` | Chroma 连通性与配置 |
 | GET | `/api/admin/task/page` | 全租户任务分页（ADMIN） |
+| GET | `/api/admin/stats?tenantId=&days=7` | 统计大盘：总览 + 日趋势 + token Top10 租户（ADMIN） |
+| GET | `/api/admin/audit/page` | 操作审计分页（ADMIN） |
 | GET / POST | `/api/admin/quota/{tenantId}` / `/api/admin/quota` | 查询 / 配置租户配额（ADMIN） |
 | DELETE | `/api/admin/tenant/{tenantId}` | 清理租户任务、向量、文件（ADMIN） |
 | POST | `/api/admin/clean` | 手工触发过期数据清理（ADMIN） |
@@ -118,6 +129,7 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 ```
 prd2api:task:lock:{taskId}
 prd2api:task:context:{taskId}
+prd2api:task:cancel:{taskId}
 prd2api:rag:embedding:{chunkMd5}
 prd2api:rag:collection:{taskId}
 prd2api:rag:chunks:{taskId}

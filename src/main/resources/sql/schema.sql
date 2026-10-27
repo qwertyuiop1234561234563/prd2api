@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS `prd_task` (
   `user_key` VARCHAR(64) NOT NULL COMMENT '用户标识',
   `file_meta_id` VARCHAR(64) NOT NULL COMMENT '文件元数据ID',
   `version_no` INT DEFAULT 1 COMMENT '文档版本号',
-  `task_status` VARCHAR(32) NOT NULL COMMENT 'INIT / PROCESS / SUCCESS / FAIL',
+  `task_status` VARCHAR(32) NOT NULL COMMENT 'INIT / PROCESS / SUCCESS / FAIL / CANCELED',
   `progress` TINYINT DEFAULT 0 COMMENT '任务进度0~100',
   `result_markdown` LONGTEXT NULL COMMENT '评审报告markdown',
   `error_msg` TEXT NULL COMMENT '失败原因',
@@ -62,3 +62,22 @@ CREATE TABLE IF NOT EXISTS `tenant_quota` (
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '租户配额表';
+
+CREATE TABLE IF NOT EXISTS `audit_log` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `user_key` VARCHAR(64) NOT NULL COMMENT '用户标识',
+  `user_role` VARCHAR(32) DEFAULT NULL COMMENT '用户角色',
+  `action` VARCHAR(64) NOT NULL COMMENT '操作动作，如 任务创建/文件上传',
+  `target` VARCHAR(128) DEFAULT NULL COMMENT '操作对象，通常为 taskId / fileMetaId',
+  `http_method` VARCHAR(16) DEFAULT NULL COMMENT 'HTTP 方法',
+  `uri` VARCHAR(256) DEFAULT NULL COMMENT '请求路径',
+  `client_ip` VARCHAR(64) DEFAULT NULL COMMENT '客户端IP',
+  `success` TINYINT DEFAULT 1 COMMENT '1 成功 0 失败',
+  `cost_ms` BIGINT DEFAULT 0 COMMENT '耗时毫秒',
+  `trace_id` VARCHAR(64) DEFAULT NULL COMMENT '全链路追踪ID',
+  `error_msg` VARCHAR(512) DEFAULT NULL COMMENT '失败原因',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
+  KEY `idx_tenant_time`(`tenant_id`,`create_time`),
+  KEY `idx_action`(`action`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '操作审计日志表';
