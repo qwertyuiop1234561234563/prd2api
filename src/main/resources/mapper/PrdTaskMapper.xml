@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dbappsecurity.prd2api.mapper.PrdTaskMapper">
+
+    <select id="countRunningByTenant" resultType="int">
+        SELECT COUNT(1)
+        FROM prd_task
+        WHERE tenant_id = #{tenantId}
+          AND deleted = 0
+          AND task_status IN ('INIT', 'PROCESS')
+    </select>
+
+    <select id="selectMaxVersionNo" resultType="java.lang.Integer">
+        SELECT MAX(version_no)
+        FROM prd_task
+        WHERE tenant_id = #{tenantId}
+          AND file_meta_id = #{fileMetaId}
+          AND deleted = 0
+    </select>
+</mapper>

@@ -1,0 +1,23 @@
+# 生产环境：全部参数通过环境变量注入，严禁硬编码密钥
+# 日志目录通过环境变量 LOG_DIR 指定（默认 ./data/logs，生产建议 /data/prd2api/logs）
+logging:
+  level:
+    root: WARN
+    com.dbappsecurity.prd2api: INFO
+
+prd2api:
+  storage:
+    mode: ${STORAGE_MODE:oss}
+    local-path: /data/prd2api/upload
+  clean:
+    expire-day: 7
+  async:
+    file-core: 8
+    file-max: 16
+    llm-core: 6
+    llm-max: 12
+
+management:
+  endpoint:
+    health:
+      show-details: never

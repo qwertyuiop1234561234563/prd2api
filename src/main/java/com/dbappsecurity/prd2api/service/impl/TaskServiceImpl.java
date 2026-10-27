@@ -1,0 +1,354 @@
+package com.dbappsecurity.prd2api.service.impl;
+
+import cn.hutool.core.util.IdUtil;
+import cn.hutool.core.util.StrUtil;
+import com.alibaba.csp.sentinel.Entry;
+import com.alibaba.csp.sentinel.SphU;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.dbappsecurity.prd2api.common.BizException;
+import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
+import com.dbappsecurity.prd2api.config.SentinelConfig;
+import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
+import com.dbappsecurity.prd2api.constant.LlmModelEnum;
+import com.dbappsecurity.prd2api.constant.RedisKeyConstant;
+import com.dbappsecurity.prd2api.constant.TaskStatusEnum;
+import com.dbappsecurity.prd2api.dto.AgentChatDTO;
+import com.dbappsecurity.prd2api.dto.RetryTaskDTO;
+import com.dbappsecurity.prd2api.dto.TaskQueryDTO;
+import com.dbappsecurity.prd2api.dto.UploadFileDTO;
+import com.dbappsecurity.prd2api.entity.FileMeta;
+import com.dbappsecurity.prd2api.entity.PrdTask;
+import com.dbappsecurity.prd2api.entity.PrdTaskCache;
+import com.dbappsecurity.prd2api.mapper.FileMetaMapper;
+import com.dbappsecurity.prd2api.mapper.PrdTaskCacheMapper;
+import com.dbappsecurity.prd2api.mapper.PrdTaskMapper;
+import com.dbappsecurity.prd2api.service.AgentService;
+import com.dbappsecurity.prd2api.service.FileService;
+import com.dbappsecurity.prd2api.service.RagService;
+import com.dbappsecurity.prd2api.service.TaskService;
+import com.dbappsecurity.prd2api.service.TenantQuotaService;
+import com.dbappsecurity.prd2api.util.ExportUtil;
+import com.dbappsecurity.prd2api.util.MetricUtil;
+import com.dbappsecurity.prd2api.util.TenantContextUtil;
+import com.dbappsecurity.prd2api.util.ChunkUtil;
+import com.dbappsecurity.prd2api.vo.ReportExportVO;
+import com.dbappsecurity.prd2api.vo.TaskVO;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Service;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+/**
+ * 任务服务实现：缓存命中、版本快照、异步调度、导出凭证、租户数据清理
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class TaskServiceImpl implements TaskService {
+
+    private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final String CONTENT_TYPE_MD = "text/markdown;charset=UTF-8";
+    private static final String CONTENT_TYPE_HTML = "text/html;charset=UTF-8";
+    private static final String CONTENT_TYPE_DOCX =
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+    private final PrdTaskMapper prdTaskMapper;
+    private final PrdTaskCacheMapper prdTaskCacheMapper;
+    private final FileMetaMapper fileMetaMapper;
+    private final FileService fileService;
+    private final AgentService agentService;
+    private final TenantQuotaService tenantQuotaService;
+    private final RagService ragService;
+    private final Prd2ApiProperties properties;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final MetricUtil metricUtil;
+
+    @Override
+    public TaskVO createTask(UploadFileDTO dto) {
+        String tenantId = TenantContextUtil.requireTenantId();
+        String userKey = TenantContextUtil.requireUserKey();
+        Entry entry = null;
+        try {
+            entry = SphU.entry(SentinelConfig.RES_TASK_CREATE);
+            FileMeta meta = fileMetaMapper.selectById(dto.getFileMetaId());
+            if (meta == null || !tenantId.equals(meta.getTenantId())) {
+                throw new BizException(BizErrorCodeEnum.NOT_FOUND, "文件不存在或不属于当前租户");
+            }
+            String modelCode = StrUtil.blankToDefault(dto.getModelCode(), LlmModelEnum.DEFAULT.getCode());
+            LlmModelEnum.resolve(modelCode);
+            String strategy = resolveStrategy(dto.getChunkStrategy());
+
+            int versionNo = 1;
+            Integer maxVersion = prdTaskMapper.selectMaxVersionNo(tenantId, meta.getFileMetaId());
+            if (maxVersion != null) {
+                versionNo = maxVersion + 1;
+            }
+
+            PrdTaskCache cache = prdTaskCacheMapper.selectValidCache(
+                    tenantId, meta.getFileMd5(), modelCode, strategy, LocalDateTime.now());
+
+            // 缓存未命中才占用并发配额，命中缓存直接返回历史结果
+            if (cache == null) {
+                tenantQuotaService.checkConcurrentQuota(tenantId);
+            }
+
+            PrdTask task = new PrdTask();
+            task.setTenantId(tenantId);
+            task.setUserKey(userKey);
+            task.setFileMetaId(meta.getFileMetaId());
+            task.setVersionNo(versionNo);
+            task.setModelCode(modelCode);
+            if (cache != null) {
+                task.setTaskStatus(TaskStatusEnum.SUCCESS.getCode());
+                task.setProgress(100);
+                task.setResultMarkdown(cache.getCacheResultMarkdown());
+                task.setFinishTime(LocalDateTime.now());
+            } else {
+                task.setTaskStatus(TaskStatusEnum.INIT.getCode());
+                task.setProgress(0);
+            }
+            prdTaskMapper.insert(task);
+            metricUtil.taskCreated();
+
+            if (cache != null) {
+                log.info("报告缓存命中，直接返回历史结果 taskId={} version={}", task.getTaskId(), versionNo);
+                return TaskVO.from(prdTaskMapper.selectById(task.getTaskId()));
+            }
+
+            // 记录分块策略，供异步线程执行时读取
+            stringRedisTemplate.opsForValue().set(RedisKeyConstant.taskContext(task.getTaskId()),
+                    strategy, 1, TimeUnit.DAYS);
+            agentService.executeAsync(task.getTaskId());
+            log.info("任务已提交异步解析 taskId={} tenantId={} fileMetaId={} version={}",
+                    task.getTaskId(), tenantId, meta.getFileMetaId(), versionNo);
+            return TaskVO.from(prdTaskMapper.selectById(task.getTaskId()));
+        } catch (BlockException e) {
+            throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "任务创建请求过多，请稍后重试");
+        } finally {
+            if (entry != null) {
+                entry.exit();
+            }
+        }
+    }
+
+    @Override
+    public TaskVO getTask(String taskId) {
+        PrdTask task = prdTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+        return TaskVO.from(task);
+    }
+
+    @Override
+    public void checkTaskAccess(String taskId) {
+        PrdTask task = prdTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+    }
+
+    @Override
+    public Page<TaskVO> pageTasks(TaskQueryDTO dto) {
+        LambdaQueryWrapper<PrdTask> wrapper = new LambdaQueryWrapper<>();
+        if (TenantContextUtil.isAdmin()) {
+            // 管理员不传 tenantId 时查看全租户任务
+            if (StrUtil.isNotBlank(dto.getTenantId())) {
+                wrapper.eq(PrdTask::getTenantId, dto.getTenantId());
+            }
+        } else {
+            wrapper.eq(PrdTask::getTenantId, TenantContextUtil.requireTenantId());
+        }
+        if (StrUtil.isNotBlank(dto.getTaskStatus())) {
+            if (!TaskStatusEnum.isValid(dto.getTaskStatus())) {
+                throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "非法的任务状态: " + dto.getTaskStatus());
+            }
+            wrapper.eq(PrdTask::getTaskStatus, dto.getTaskStatus());
+        }
+        if (StrUtil.isNotBlank(dto.getFileMetaId())) {
+            wrapper.eq(PrdTask::getFileMetaId, dto.getFileMetaId());
+        }
+        wrapper.orderByDesc(PrdTask::getCreateTime);
+
+        Page<PrdTask> page = prdTaskMapper.selectPage(new Page<>(dto.getPageNum(), dto.getPageSize()), wrapper);
+        Page<TaskVO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        result.setRecords(page.getRecords().stream().map(TaskVO::summary).toList());
+        return result;
+    }
+
+    @Override
+    public void retryTask(RetryTaskDTO dto) {
+        PrdTask task = prdTaskMapper.selectById(dto.getTaskId());
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+        if (!TaskStatusEnum.FAIL.getCode().equals(task.getTaskStatus())
+                && !TaskStatusEnum.INIT.getCode().equals(task.getTaskStatus())) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "仅失败或初始状态的任务支持重试");
+        }
+        String modelCode = StrUtil.blankToDefault(dto.getModelCode(), task.getModelCode());
+        LlmModelEnum.resolve(modelCode);
+
+        prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
+                .eq(PrdTask::getTaskId, task.getTaskId())
+                .set(PrdTask::getTaskStatus, TaskStatusEnum.INIT.getCode())
+                .set(PrdTask::getProgress, 0)
+                .set(PrdTask::getErrorMsg, null)
+                .set(PrdTask::getFinishTime, null)
+                .set(PrdTask::getModelCode, modelCode));
+        agentService.executeAsync(task.getTaskId());
+        log.info("任务已重新提交 taskId={} modelCode={}", task.getTaskId(), modelCode);
+    }
+
+    @Override
+    public String chat(AgentChatDTO dto) {
+        return agentService.chat(dto.getTaskId(), dto.getQuestion());
+    }
+
+    @Override
+    public ReportExportVO exportReport(String taskId, String format) {
+        PrdTask task = prdTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+        if (!TaskStatusEnum.SUCCESS.getCode().equals(task.getTaskStatus())
+                || StrUtil.isBlank(task.getResultMarkdown())) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "仅解析成功的任务支持导出");
+        }
+        String normalized = normalizeFormat(format);
+        String token = IdUtil.fastSimpleUUID();
+        String fileName = "review-" + taskId + "-" + LocalDateTime.now().format(FILE_TIME) + "." + normalized;
+        Path path = ExportUtil.exportPath(properties.getExport().getDir(), token + "." + normalized);
+
+        String contentType;
+        try {
+            switch (normalized) {
+                case "html" -> {
+                    Files.writeString(path, ExportUtil.markdownToHtml(task.getResultMarkdown(), "需求评审报告"));
+                    contentType = CONTENT_TYPE_HTML;
+                }
+                case "docx" -> {
+                    ExportUtil.markdownToDocx(task.getResultMarkdown(), path);
+                    contentType = CONTENT_TYPE_DOCX;
+                }
+                default -> {
+                    Files.writeString(path, task.getResultMarkdown());
+                    contentType = CONTENT_TYPE_MD;
+                }
+            }
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "报告导出失败: " + e.getMessage(), e);
+        }
+
+        int expireSeconds = Math.max(60, properties.getExport().getTokenExpireSeconds());
+        String tokenValue = String.join("|", task.getTaskId(), task.getTenantId(), fileName,
+                contentType, path.toAbsolutePath().toString());
+        stringRedisTemplate.opsForValue().set(RedisKeyConstant.exportToken(token), tokenValue,
+                expireSeconds, TimeUnit.SECONDS);
+
+        ReportExportVO vo = new ReportExportVO();
+        vo.setTaskId(taskId);
+        vo.setFormat(normalized);
+        vo.setFileName(fileName);
+        vo.setExportToken(token);
+        vo.setDownloadUrl("/api/task/export/download?token=" + token);
+        vo.setExpireSeconds(expireSeconds);
+        log.info("报告导出就绪 taskId={} format={} expire={}s", taskId, normalized, expireSeconds);
+        return vo;
+    }
+
+    @Override
+    public ExportFile loadExportFile(String token) {
+        String tokenValue = stringRedisTemplate.opsForValue().get(RedisKeyConstant.exportToken(token));
+        if (StrUtil.isBlank(tokenValue)) {
+            throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID);
+        }
+        String[] parts = tokenValue.split("\\|", 5);
+        if (parts.length < 5) {
+            throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID, "导出凭证内容非法");
+        }
+        Resource resource = new FileSystemResource(parts[4]);
+        if (!resource.exists()) {
+            throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID, "导出文件已清理，请重新导出");
+        }
+        return new ExportFile(resource, parts[2], parts[3]);
+    }
+
+    @Override
+    public void deleteTask(String taskId) {
+        PrdTask task = prdTaskMapper.selectById(taskId);
+        if (task == null) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "任务不存在");
+        }
+        checkTenant(task.getTenantId());
+        if (TaskStatusEnum.PROCESS.getCode().equals(task.getTaskStatus())) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "任务执行中，暂不支持删除");
+        }
+        prdTaskMapper.deleteById(taskId);
+        ragService.dropTaskIndex(taskId);
+        stringRedisTemplate.delete(RedisKeyConstant.taskContext(taskId));
+        log.info("任务已删除 taskId={} operatorTenant={}", taskId, TenantContextUtil.getTenantId());
+    }
+
+    @Override
+    public int purgeTenant(String tenantId) {
+        if (!TenantContextUtil.isAdmin()) {
+            throw new BizException(BizErrorCodeEnum.FORBIDDEN, "仅管理员可清理租户数据");
+        }
+        List<PrdTask> tasks = prdTaskMapper.selectList(new LambdaQueryWrapper<PrdTask>()
+                .eq(PrdTask::getTenantId, tenantId));
+        for (PrdTask task : tasks) {
+            ragService.dropTaskIndex(task.getTaskId());
+            stringRedisTemplate.delete(RedisKeyConstant.taskContext(task.getTaskId()));
+        }
+        prdTaskMapper.delete(new LambdaQueryWrapper<PrdTask>().eq(PrdTask::getTenantId, tenantId));
+        fileService.deleteTenantFiles(tenantId);
+        log.info("租户数据已清理 tenantId={} 任务数={}", tenantId, tasks.size());
+        return tasks.size();
+    }
+
+    private String resolveStrategy(String chunkStrategy) {
+        String strategy = StrUtil.blankToDefault(chunkStrategy, properties.getChunk().getStrategy());
+        if (!ChunkUtil.STRATEGY_FIXED.equalsIgnoreCase(strategy)
+                && !ChunkUtil.STRATEGY_SEMANTIC.equalsIgnoreCase(strategy)) {
+            throw new BizException(BizErrorCodeEnum.PARAM_INVALID,
+                    "分块策略仅支持 fixed / semantic，当前值: " + strategy);
+        }
+        return strategy;
+    }
+
+    private String normalizeFormat(String format) {
+        String value = StrUtil.blankToDefault(format, "md").toLowerCase();
+        return switch (value) {
+            case "md", "markdown" -> "md";
+            case "html" -> "html";
+            case "docx", "doc" -> "docx";
+            default -> throw new BizException(BizErrorCodeEnum.PARAM_INVALID,
+                    "导出格式仅支持 md / html / docx，当前值: " + format);
+        };
+    }
+
+    private void checkTenant(String tenantId) {
+        if (!TenantContextUtil.isAdmin() && !tenantId.equals(TenantContextUtil.requireTenantId())) {
+            throw new BizException(BizErrorCodeEnum.FORBIDDEN, "无权访问其他租户数据");
+        }
+    }
+}

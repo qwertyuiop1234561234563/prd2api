@@ -1,0 +1,13 @@
+# 测试环境：连接测试库，日志级别收敛
+logging:
+  level:
+    com.dbappsecurity.prd2api: INFO
+
+prd2api:
+  storage:
+    mode: local
+    local-path: /data/prd2api/upload
+  export:
+    dir: /data/prd2api/export
+  clean:
+    expire-day: 7

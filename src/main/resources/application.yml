@@ -1,0 +1,141 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+
+spring:
+  application:
+    name: prd2api
+  profiles:
+    active: dev
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:prd2api}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USER:root}
+    password: ${DB_PWD:123456}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      pool-name: prd2api-hikari
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PWD:}
+      database: 0
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+  cloud:
+    refresh:
+      enabled: true
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.dbappsecurity.prd2api.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    banner: false
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+prd2api:
+  storage:
+    mode: ${STORAGE_MODE:local}
+    local-path: ${UPLOAD_PATH:./data/upload}
+    oss-endpoint: ${OSS_ENDPOINT:}
+    oss-access-key: ${OSS_AK:}
+    oss-secret-key: ${OSS_SK:}
+    oss-bucket: ${OSS_BUCKET:}
+  chunk:
+    strategy: semantic
+    fixed-size: 800
+    overlap: 150
+    max-llm-chars: 60000
+  rag:
+    enable: true
+    chroma-url: ${CHROMA_URL:http://127.0.0.1:8000}
+    chroma-tenant: default_tenant
+    chroma-database: default_database
+    collection-prefix: prd2api
+    top-k: 4
+  llm:
+    base-url: ${LLM_BASE_URL:https://api.deepseek.com/v1}
+    api-key: ${LLM_API_KEY:}
+    model-name: deepseek-chat
+    embedding-model: deepseek-embedding
+    connect-timeout: 30000
+    read-timeout: 60000
+    max-retry: 2
+    retry-backoff-ms: 800
+    temperature: 0.2
+  limit:
+    upload-per-minute: 20
+    llm-per-minute: 60
+  sensitive:
+    enable: true
+    words: 身份证号,银行卡号,密码,密钥,secret,password
+  security:
+    # IP 黑名单，命中直接拒绝
+    ip-blacklist: []
+    # 接口路径黑名单（前缀匹配）
+    path-blacklist: []
+  clean:
+    enable: true
+    expire-day: 7
+    cron: "0 30 3 * * ?"
+  export:
+    token-expire-seconds: 300
+    dir: ./data/export
+  sentinel-log-dir: ./data/logs/csp
+  async:
+    file-core: 4
+    file-max: 8
+    file-queue: 200
+    llm-core: 3
+    llm-max: 6
+    llm-queue: 100
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.dbappsecurity.prd2api: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{36} - %msg%n"

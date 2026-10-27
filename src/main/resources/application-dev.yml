@@ -1,0 +1,11 @@
+# 开发环境：本地 MySQL / Redis / Chroma
+logging:
+  level:
+    com.dbappsecurity.prd2api: DEBUG
+    com.dbappsecurity.prd2api.mapper: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{traceId}] %logger{40} - %msg%n"
+
+prd2api:
+  clean:
+    expire-day: 3
