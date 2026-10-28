@@ -13,6 +13,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,11 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        // 跨域预检请求不携带 Authorization 与业务 Header，若在此处鉴权会被判为匿名用户而 403，
+        // 浏览器随即拦截真正的请求，因此预检必须直接放行（由 CORS 配置返回允许头）
+        if (CorsUtils.isPreFlightRequest(request)) {
+            return true;
+        }
         String clientIp = resolveIp(request);
         if (isIpBlocked(clientIp) || isPathBlocked(request.getRequestURI())) {
             writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN, "请求来源或接口已被禁用"));
@@ -143,15 +149,18 @@ public class AuthInterceptor implements HandlerInterceptor {
     }
 
     private String resolveIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StrUtil.isNotBlank(forwarded)) {
-            return forwarded.split(",")[0].trim();
+        if (properties.getSecurity().isTrustForwardedFor()) {
+            String forwarded = request.getHeader("X-Forwarded-For");
+            if (StrUtil.isNotBlank(forwarded)) {
+                return forwarded.split(",")[0].trim();
+            }
         }
         return request.getRemoteAddr();
     }
 
     private void writeJson(HttpServletResponse response, RespModel<?> body) throws Exception {
-        response.setStatus(HttpServletResponse.SC_OK);
+        // 与全局异常处理保持一致：业务码同步映射到 HTTP 状态码，便于网关、监控与客户端识别失败
+        response.setStatus(RespModel.toHttpStatus(body.getCode()));
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.getWriter().write(objectMapper.writeValueAsString(body));

@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIKU // PRD2API · 登录</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --void:#050A14; --deep:#0A1424;
+    --cream:#E8F5FF; --dim:#93AEC9; --faint:#5C7A96;
+    --aqua:#39C5BB; --aqua-lit:#6BF7EA; --pink:#FF6FB5; --violet:#9B7BFF;
+    --line:rgba(107,247,234,.16); --line-strong:rgba(107,247,234,.34);
+    --mono:"JetBrains Mono","Cascadia Mono",Consolas,monospace;
+    --display:"M PLUS Rounded 1c","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+    --body:"Noto Sans SC","HarmonyOS Sans SC","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--void); color:var(--cream); font-family:var(--body);
+    letter-spacing:.01em; -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+
+  /* 氛围层 */
+  .aurora{position:fixed; inset:-20%; z-index:0; pointer-events:none; filter:blur(70px); opacity:.55}
+  .aurora i{position:absolute; display:block; border-radius:50%; mix-blend-mode:screen; animation:float 18s ease-in-out infinite alternate}
+  .aurora i:nth-child(1){width:46vw;height:46vw;left:2%;top:4%;background:radial-gradient(circle,rgba(57,197,187,.55),transparent 68%)}
+  .aurora i:nth-child(2){width:36vw;height:36vw;right:2%;top:-6%;background:radial-gradient(circle,rgba(255,111,181,.32),transparent 66%);animation-delay:-6s}
+  .aurora i:nth-child(3){width:42vw;height:42vw;left:42%;bottom:-18%;background:radial-gradient(circle,rgba(155,123,255,.26),transparent 68%);animation-delay:-11s}
+  @keyframes float{0%{transform:translate3d(0,0,0) scale(1)}100%{transform:translate3d(4%,-6%,0) scale(1.15)}}
+  .grid{
+    position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.5;
+    background-image:linear-gradient(rgba(107,247,234,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(107,247,234,.05) 1px,transparent 1px);
+    background-size:64px 64px;
+    mask-image:radial-gradient(circle at 50% 30%,#000 10%,transparent 80%);
+  }
+  .scan{
+    position:fixed; left:0; right:0; height:120px; z-index:2; pointer-events:none;
+    background:linear-gradient(180deg,transparent,rgba(107,247,234,.05),transparent);
+    animation:scanDown 9s linear infinite;
+  }
+  @keyframes scanDown{0%{top:-20%}100%{top:110%}}
+
+  /* 布局 */
+  .page{
+    position:relative; z-index:3; height:100%;
+    display:grid; grid-template-columns:minmax(0,1fr) minmax(0,460px);
+    gap:56px; align-items:center; padding:0 6vw;
+    max-width:1360px; margin:0 auto;
+  }
+
+  /* 左侧品牌区 */
+  .brand-col{min-width:0; animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes rise{from{opacity:0; transform:translateY(16px)}}
+  .brand-mark{display:flex; align-items:center; gap:14px}
+  .logo{
+    position:relative; width:52px; height:52px; flex:none; display:grid; place-items:center; border-radius:16px;
+    background:radial-gradient(circle at 30% 25%,rgba(107,247,234,.35),rgba(57,197,187,.12));
+    border:1px solid var(--line-strong);
+    box-shadow:0 0 22px rgba(57,197,187,.28) inset,0 0 18px rgba(57,197,187,.18);
+  }
+  .logo svg{width:28px; height:28px; color:var(--aqua-lit); animation:spin 12s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .logo::after{
+    content:""; position:absolute; inset:-4px; border-radius:20px;
+    border:1px solid rgba(255,111,181,.35); animation:pulseRing 2.8s ease-out infinite;
+  }
+  @keyframes pulseRing{0%{transform:scale(.92);opacity:.85}70%{transform:scale(1.12);opacity:0}100%{opacity:0}}
+  .brand-mark h1{
+    margin:0; font-family:var(--display); font-weight:800; font-size:30px; line-height:1;
+    letter-spacing:-.01em; white-space:nowrap;
+  }
+  .brand-mark h1 em{
+    font-style:normal;
+    background:linear-gradient(100deg,var(--aqua-lit),var(--pink));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .brand-mark .sub{
+    margin:6px 0 0; font-family:var(--mono); font-size:9px; letter-spacing:.26em;
+    text-transform:uppercase; color:var(--faint);
+  }
+  .brand-lead{margin:22px 0 0; max-width:430px; font-size:14px; line-height:1.9; color:var(--dim)}
+  .brand-lead b{color:var(--cream); font-weight:600}
+  .brand-points{list-style:none; margin:18px 0 0; padding:0; display:grid; gap:9px; max-width:430px}
+  .brand-points li{display:flex; align-items:center; gap:9px; font-size:12px; color:var(--dim)}
+  .brand-points li i{
+    width:18px; height:18px; flex:none; border-radius:50%; display:grid; place-items:center;
+    font-family:var(--mono); font-style:normal; font-size:9px; color:var(--aqua-lit);
+    border:1px solid rgba(107,247,234,.4); background:rgba(57,197,187,.1);
+  }
+  .mascot-strip{
+    margin-top:26px; position:relative; width:min(430px,100%); height:168px; border-radius:20px;
+    overflow:hidden; border:2px solid rgba(107,247,234,.4); background:#0F2438;
+    box-shadow:0 4px 0 #061423,0 0 28px rgba(57,197,187,.18);
+  }
+  .mascot-strip img{width:100%; height:100%; object-fit:cover; object-position:50% 18%; display:block}
+  .mascot-strip::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg,rgba(15,36,56,.1),rgba(15,36,56,0) 26%,rgba(15,36,56,.55) 74%,#0F2438 100%);
+  }
+  .mascot-strip .tag{
+    position:absolute; left:12px; bottom:12px; z-index:2;
+    font-family:var(--display); font-weight:800; font-size:9.5px; letter-spacing:.08em;
+    padding:3px 8px; border-radius:10px; border:2px solid rgba(107,247,234,.4);
+    background:rgba(8,24,38,.82); box-shadow:0 2px 0 #061423;
+  }
+  .mascot-strip .tag b{color:var(--aqua-lit)}
+
+  /* 右侧登录卡 */
+  .auth-col{min-width:0; animation:rise .7s .1s cubic-bezier(.2,.8,.2,1) both}
+  .auth-card{
+    position:relative; padding:24px 24px 22px; border-radius:22px;
+    border:2px solid rgba(107,247,234,.4);
+    background:linear-gradient(168deg,#122A44,#0A1828);
+    box-shadow:0 5px 0 #061423,0 22px 60px rgba(0,0,0,.6),0 0 34px rgba(57,197,187,.14);
+  }
+  .auth-card::before{
+    content:""; position:absolute; left:14px; right:14px; top:0; height:2px;
+    background:linear-gradient(90deg,transparent,rgba(107,247,234,.8),rgba(255,111,181,.6),transparent);
+    border-radius:2px;
+  }
+  .auth-tabs{display:flex; gap:8px; padding:4px; margin-bottom:18px; border-radius:14px; background:rgba(8,24,38,.7); border:1px solid var(--line)}
+  .auth-tab{
+    flex:1; padding:10px 8px; border-radius:11px; border:0; cursor:pointer; background:transparent;
+    font-family:var(--display); font-weight:800; font-size:13px; color:var(--dim);
+    transition:.18s;
+  }
+  .auth-tab:hover{color:var(--cream)}
+  .auth-tab.active{
+    color:#04141F; background:linear-gradient(120deg,var(--aqua-lit),var(--aqua));
+    box-shadow:0 2px 0 #061423;
+  }
+  .auth-tab:focus-visible{outline:2px solid var(--aqua-lit); outline-offset:2px}
+
+  .fields{display:grid; gap:13px}
+  .field{display:flex; flex-direction:column; gap:6px}
+  .field[hidden]{display:none}
+  .field label{
+    font-family:var(--mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; color:var(--faint);
+  }
+  .field label b{color:var(--pink); font-weight:400}
+  input{
+    font-family:var(--mono); font-size:13px; color:var(--cream); width:100%;
+    background:rgba(140,220,255,.06); border:1px solid var(--line); border-radius:11px;
+    padding:12px 13px; outline:none; transition:.2s;
+  }
+  input::placeholder{color:var(--faint)}
+  input:focus{border-color:var(--aqua); background:rgba(57,197,187,.1); box-shadow:0 0 0 3px rgba(57,197,187,.12)}
+
+  .check{display:flex; align-items:center; gap:8px; margin-top:13px; font-family:var(--mono); font-size:10px; color:var(--dim); cursor:pointer; user-select:none}
+  .check input{width:14px; height:14px; flex:none; padding:0; accent-color:var(--aqua)}
+
+  .submit{
+    width:100%; margin-top:18px; padding:13px; border-radius:13px; cursor:pointer; border:0;
+    font-family:var(--display); font-weight:800; font-size:14px; letter-spacing:.02em; color:#04141F;
+    background:linear-gradient(120deg,var(--aqua-lit),var(--aqua) 55%,var(--violet));
+    box-shadow:0 4px 0 #061423,0 10px 26px rgba(57,197,187,.32);
+    transition:.16s cubic-bezier(.34,1.56,.64,1);
+  }
+  .submit:hover{filter:brightness(1.06); transform:translateY(-1px)}
+  .submit:active{transform:translateY(1px); box-shadow:0 2px 0 #061423}
+  .submit:disabled{opacity:.55; cursor:not-allowed; transform:none}
+
+  .note{
+    margin-top:14px; padding:10px 12px; border-radius:11px; font-size:11.5px; line-height:1.7;
+    border:1px dashed rgba(107,247,234,.3); background:rgba(8,24,38,.55); color:var(--dim);
+    display:none;
+  }
+  .note.show{display:block; animation:noteIn .24s ease both}
+  .note.err{border-color:rgba(255,92,122,.5); color:#FFB3C1; background:rgba(60,16,26,.5)}
+  .note.ok{border-color:rgba(107,247,234,.5); color:var(--aqua-lit); background:rgba(8,40,42,.5)}
+  @keyframes noteIn{from{opacity:0; transform:translateY(-4px)}}
+
+  .auth-foot{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    margin-top:16px; padding-top:14px; border-top:1px dashed rgba(107,247,234,.2);
+  }
+  .auth-foot .hint{font-family:var(--mono); font-size:9px; color:var(--faint); letter-spacing:.06em; line-height:1.6}
+  .back{
+    font-family:var(--display); font-weight:700; font-size:11px; color:var(--dim);
+    text-decoration:none; padding:7px 11px; border-radius:10px; border:1px solid var(--line);
+    background:rgba(140,220,255,.04); white-space:nowrap; transition:.18s;
+  }
+  .back:hover{color:var(--aqua-lit); border-color:var(--line-strong); box-shadow:0 0 16px rgba(57,197,187,.22)}
+
+  /* 接入地址（折叠） */
+  .api-base{margin-top:14px; border-top:1px dashed rgba(107,247,234,.18); padding-top:12px}
+  .api-base summary{
+    cursor:pointer; list-style:none; font-family:var(--mono); font-size:9px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--faint); transition:.18s;
+  }
+  .api-base summary::-webkit-details-marker{display:none}
+  .api-base summary:hover{color:var(--aqua-lit)}
+  .api-base summary::before{content:"▸ "; color:var(--aqua-lit)}
+  .api-base[open] summary::before{content:"▾ "}
+  .api-base .fields{margin-top:11px}
+
+  /* 已登录状态 */
+  .session{display:none}
+  .session.show{display:block}
+  .session .who{
+    display:flex; align-items:center; gap:12px; padding:14px; border-radius:14px;
+    border:1px solid rgba(107,247,234,.3); background:rgba(8,24,38,.6);
+  }
+  .session .avatar{
+    width:44px; height:44px; flex:none; border-radius:13px; overflow:hidden;
+    border:2px solid rgba(107,247,234,.35); background:rgba(57,197,187,.12);
+  }
+  .session .avatar img{width:100%; height:100%; object-fit:contain; transform:scale(1.18)}
+  .session .meta{min-width:0}
+  .session .meta b{display:block; font-family:var(--display); font-size:14px; font-weight:800}
+  .session .meta span{font-family:var(--mono); font-size:9px; color:var(--faint); letter-spacing:.08em}
+
+  @media (max-width:980px){
+    .page{grid-template-columns:minmax(0,1fr); gap:26px; padding:26px 20px; align-content:start; overflow-y:auto; height:auto; min-height:100%}
+    .brand-col{order:2}
+    .auth-col{order:1}
+    .brand-lead,.brand-points{display:none}
+    .mascot-strip{display:none}
+    .brand-mark h1{font-size:24px}
+    .brand-mark .sub{font-size:8px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001s !important; animation-iteration-count:1 !important; transition-duration:.001s !important}
+  }
+</style>
+</head>
+<body>
+<div class="aurora"><i></i><i></i><i></i></div>
+<div class="grid"></div>
+<div class="scan"></div>
+
+<main class="page">
+  <section class="brand-col">
+    <div class="brand-mark">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <path d="M4 14V9a8 8 0 0 1 16 0v5"/><rect x="3" y="13" width="4" height="7" rx="2"/><rect x="17" y="13" width="4" height="7" rx="2"/>
+        </svg>
+      </div>
+      <div>
+        <h1>MIKU // <em>PRD2API</em></h1>
+        <p class="sub">Vocaloid-Style Requirement Oracle</p>
+      </div>
+    </div>
+    <p class="brand-lead">把一份 PRD 变成可评审的<b>接口契约</b>、<b>MySQL DDL</b> 和<b>研发任务清单</b>。登录后额度、优惠券和历史任务都会跟着你的账号走。</p>
+    <ul class="brand-points">
+      <li><i>01</i>四阶段流水线：业务理解 → 风险扫描 → 结构生成 → 汇总格式化</li>
+      <li><i>02</i>租户 + 任务双重隔离，报告支持 MD / HTML / DOCX 导出</li>
+      <li><i>03</i>令牌 12 小时滑动续期，活动自动刷新</li>
+    </ul>
+    <div class="mascot-strip">
+      <img src="assets/mascot.jpg" alt="虚拟歌姬初音未来">
+      <span class="tag"><b>MIKU</b> · ASSISTANT</span>
+    </div>
+  </section>
+
+  <section class="auth-col">
+    <div class="auth-card">
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" type="button" role="tab" aria-selected="true" data-mode="login">登录</button>
+        <button class="auth-tab" type="button" role="tab" aria-selected="false" data-mode="register">注册</button>
+      </div>
+
+      <div class="session" id="session">
+        <div class="who">
+          <div class="avatar"><img src="assets/fufu.png" alt=""></div>
+          <div class="meta">
+            <b id="sessionName">已登录</b>
+            <span id="sessionMeta">READY</span>
+          </div>
+        </div>
+        <button class="submit" type="button" id="sessionEnter">进入控制台</button>
+        <button class="back" type="button" id="sessionSwitch" style="width:100%;margin-top:10px;text-align:center">切换账号</button>
+      </div>
+
+      <form id="authForm" novalidate>
+        <div class="fields">
+          <div class="field">
+            <label for="fTenant">租户 · Tenant</label>
+            <input id="fTenant" name="tenant" placeholder="default" autocomplete="organization" spellcheck="false">
+          </div>
+          <div class="field">
+            <label for="fUser">账号 · Username</label>
+            <input id="fUser" name="username" placeholder="alice" autocomplete="username" spellcheck="false" required>
+          </div>
+          <div class="field">
+            <label for="fPass">密码 · Password <b id="passHint"></b></label>
+            <input id="fPass" name="password" type="password" placeholder="至少 8 位" autocomplete="current-password" required>
+          </div>
+          <div class="field" id="nameField" hidden>
+            <label for="fName">昵称 · Display Name（可选）</label>
+            <input id="fName" name="displayName" placeholder="留空使用账号" autocomplete="nickname">
+          </div>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="remember">
+          <span>记住本机接入地址与租户</span>
+        </label>
+
+        <button class="submit" type="submit" id="submitBtn">登录</button>
+      </form>
+
+      <div class="note" id="note" role="status" aria-live="polite"></div>
+
+      <details class="api-base" id="apiBaseBox">
+        <summary>接入地址 · API BASE</summary>
+        <div class="fields">
+          <div class="field">
+            <label for="fBase">后端地址</label>
+            <input id="fBase" placeholder="http://localhost:8080" spellcheck="false">
+          </div>
+        </div>
+      </details>
+
+      <div class="auth-foot">
+        <span class="hint">登录即使用 Bearer 令牌<br>连续 5 次密码错误锁定 15 分钟</span>
+        <a class="back" id="backLink" href="index.html">← 返回控制台</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  'use strict';
+
+  const LS_KEY = 'prd2api.console.settings';
+  const AUTH_KEY = 'prd2api.console.auth';
+
+  const $ = (sel) => document.querySelector(sel);
+  const settings = { base: 'http://localhost:8080', tenant: 'default', user: 'demo', role: 'USER' };
+
+  let mode = 'login';
+  let token = '';
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) Object.assign(settings, JSON.parse(raw));
+    } catch (e) { /* 忽略损坏的本地配置 */ }
+  }
+
+  function saveSettings() {
+    settings.base = ($('#fBase').value.trim() || 'http://localhost:8080').replace(/\/+$/, '');
+    settings.tenant = $('#fTenant').value.trim() || 'default';
+    try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch (e) { /* 隐私模式忽略 */ }
+  }
+
+  /** 只接受站内相对路径，避免 next 参数被拿来做跳转钓鱼 */
+  function safeNext() {
+    const raw = new URLSearchParams(location.search).get('next') || 'index.html';
+    if (!/^[\w./-]+$/.test(raw) || raw.startsWith('//') || raw.includes('..')) return 'index.html';
+    return raw;
+  }
+
+  function setNote(text, type) {
+    const box = $('#note');
+    box.textContent = text || '';
+    box.className = 'note' + (text ? ' show ' + (type || '') : '');
+  }
+
+  function setMode(next) {
+    mode = next;
+    document.querySelectorAll('.auth-tab').forEach((b) => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    $('#nameField').hidden = mode !== 'register';
+    $('#submitBtn').textContent = mode === 'register' ? '注册并登录' : '登录';
+    $('#fPass').setAttribute('autocomplete', mode === 'register' ? 'new-password' : 'current-password');
+    $('#passHint').textContent = mode === 'register' ? '至少 8 位' : '';
+    setNote('');
+  }
+
+  async function api(path, opts = {}) {
+    const headers = {};
+    const body = opts.body ? (headers['Content-Type'] = 'application/json', JSON.stringify(opts.body)) : undefined;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+    try {
+      const res = await fetch(settings.base + path, { method: opts.method || 'POST', headers, body, signal: ctrl.signal });
+      const text = await res.text();
+      let json;
+      try { json = text ? JSON.parse(text) : {}; } catch (e) { throw new Error('响应不是合法 JSON（HTTP ' + res.status + '）'); }
+      if (json.code !== 0) throw new Error(json.message || ('请求失败（HTTP ' + res.status + '）'));
+      return json.data;
+    } catch (e) {
+      if (e.name === 'AbortError') throw new Error('请求超时，请检查后端是否启动');
+      if (e instanceof TypeError) throw new Error('无法连接 ' + settings.base + '，请检查服务地址');
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function showSession(user) {
+    $('#session').classList.add('show');
+    $('#authForm').style.display = 'none';
+    $('.auth-tabs').style.display = 'none';
+    $('#sessionName').textContent = user.displayName || user.username;
+    const bits = [user.role || 'USER', user.tenantId || settings.tenant];
+    $('#sessionMeta').textContent = bits.join(' · ');
+  }
+
+  function hideSession() {
+    $('#session').classList.remove('show');
+    $('#authForm').style.display = '';
+    $('.auth-tabs').style.display = '';
+  }
+
+  function storeAuth(data) {
+    token = data.token;
+    try { localStorage.setItem(AUTH_KEY, data.token); } catch (e) { /* 忽略 */ }
+  }
+
+  function enterConsole() {
+    location.replace(safeNext());
+  }
+
+  async function submit() {
+    const username = $('#fUser').value.trim();
+    const password = $('#fPass').value;
+    const tenantId = $('#fTenant').value.trim() || settings.tenant || 'default';
+    if (!username || !password) { setNote('请填写账号与密码', 'err'); return; }
+    if (mode === 'register' && password.length < 8) { setNote('注册密码至少 8 位', 'err'); return; }
+
+    if ($('#remember').checked) saveSettings();
+
+    const payload = { tenantId, username, password };
+    if (mode === 'register') payload.displayName = $('#fName').value.trim() || undefined;
+
+    const btn = $('#submitBtn');
+    btn.disabled = true;
+    btn.textContent = mode === 'register' ? '注册中…' : '登录中…';
+    setNote('');
+    try {
+      const data = await api(mode === 'register' ? '/api/auth/register' : '/api/auth/login', { body: payload });
+      if (!data || !data.token) throw new Error('服务端未返回令牌');
+      storeAuth(data);
+      setNote((mode === 'register' ? '注册成功，正在进入控制台…' : '欢迎回来，' + (data.user.displayName || data.user.username)), 'ok');
+      setTimeout(enterConsole, 420);
+    } catch (e) {
+      setNote(e.message, 'err');
+      btn.disabled = false;
+      btn.textContent = mode === 'register' ? '注册并登录' : '登录';
+    }
+  }
+
+  async function bootstrap() {
+    loadSettings();
+    $('#fBase').value = settings.base;
+    $('#fTenant').value = settings.tenant;
+    $('#backLink').href = safeNext();
+
+    try { token = localStorage.getItem(AUTH_KEY) || ''; } catch (e) { token = ''; }
+    if (token) {
+      try {
+        const res = await fetch(settings.base + '/api/auth/me', { headers: { Authorization: 'Bearer ' + token } });
+        const json = await res.json();
+        if (json.code === 0 && json.data) { showSession(json.data); return; }
+      } catch (e) { /* 后端未起时仍允许改账号密码登录 */ }
+      try { localStorage.removeItem(AUTH_KEY); } catch (e) { /* 忽略 */ }
+      token = '';
+    }
+  }
+
+  document.querySelectorAll('.auth-tab').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  $('#authForm').addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  $('#sessionEnter').addEventListener('click', enterConsole);
+  $('#sessionSwitch').addEventListener('click', () => {
+    try { localStorage.removeItem(AUTH_KEY); } catch (e) { /* 忽略 */ }
+    token = '';
+    hideSession();
+    setNote('已退出本机登录状态，可以换个账号', 'ok');
+  });
+  $('#fBase').addEventListener('change', () => { if ($('#remember').checked) saveSettings(); });
+
+  bootstrap();
+})();
+</script>
+</body>
+</html>

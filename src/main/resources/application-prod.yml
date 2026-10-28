@@ -11,6 +11,12 @@ prd2api:
     local-path: /data/prd2api/upload
   security:
     require-identity: true
+    # 生产只接受登录令牌，禁止 Header 身份透传（否则任意客户端可伪造 X-User-Role 越权）
+    require-login: ${REQUIRE_LOGIN:true}
+    trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
+  # 生产不自动创建内置管理员：需显式开启并注入强密码，避免默认口令进入线上
+  admin-init:
+    enabled: ${ADMIN_INIT_ENABLED:false}
   clean:
     expire-day: 7
   async:
@@ -18,6 +24,12 @@ prd2api:
     file-max: 16
     llm-core: 6
     llm-max: 12
+
+springdoc:
+  api-docs:
+    enabled: ${OPENAPI_ENABLED:false}
+  swagger-ui:
+    enabled: ${OPENAPI_ENABLED:false}
 
 management:
   endpoints:

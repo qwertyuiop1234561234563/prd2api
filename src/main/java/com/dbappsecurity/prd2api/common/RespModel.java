@@ -63,4 +63,14 @@ public class RespModel<T> implements Serializable {
         resp.setTimestamp(System.currentTimeMillis());
         return resp;
     }
+
+    /**
+     * 业务码到 HTTP 状态码的映射：错误码本身按 HTTP 语义定义，超出范围一律按 500 处理
+     *
+     * @param code 业务状态码
+     * @return 合法的 HTTP 状态码
+     */
+    public static int toHttpStatus(int code) {
+        return code >= 400 && code <= 599 ? code : 500;
+    }
 }

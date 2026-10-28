@@ -61,13 +61,19 @@ class AuthServiceImplTest {
         SysUser user = activeUser();
         user.setPasswordHash(BCrypt.hashpw("correct-password"));
         user.setFailCount(0);
+        SysUser counted = activeUser();
+        counted.setFailCount(1);
         when(sysUserMapper.selectByTenantAndUsername("default", "alice")).thenReturn(user);
+        // 失败次数由 SQL 原子自增，需回读最新次数判断是否达到锁定阈值
+        when(sysUserMapper.increaseFailCount("u-1")).thenReturn(1);
+        when(sysUserMapper.selectById("u-1")).thenReturn(counted);
 
         LoginDTO dto = loginDTO("wrong-password");
         BizException ex = assertThrows(BizException.class, () -> authService.login(dto));
         assertEquals(401, ex.getCode());
         assertTrue(ex.getMessage().contains("还可尝试 4 次"));
-        verify(sysUserMapper).update(isNull(), any());
+        verify(sysUserMapper).increaseFailCount("u-1");
+        verify(sysUserMapper, never()).lockUser(anyString(), any());
     }
 
     @Test

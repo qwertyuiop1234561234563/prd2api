@@ -2,7 +2,9 @@ package com.dbappsecurity.prd2api.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.dbappsecurity.prd2api.annotation.Audit;
+import com.dbappsecurity.prd2api.common.BizException;
 import com.dbappsecurity.prd2api.common.RespModel;
+import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import com.dbappsecurity.prd2api.dto.AuditQueryDTO;
 import com.dbappsecurity.prd2api.dto.TaskQueryDTO;
 import com.dbappsecurity.prd2api.dto.TenantQuotaDTO;
@@ -19,6 +21,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.validation.annotation.Validated;
@@ -63,7 +67,9 @@ public class AdminController {
     @GetMapping("/stats")
     public RespModel<AdminStatsVO> stats(
             @Parameter(description = "租户ID，留空为全租户") @RequestParam(required = false) String tenantId,
-            @Parameter(description = "趋势天数，1~90") @RequestParam(defaultValue = "7") int days) {
+            @Parameter(description = "趋势天数，1~90")
+            @RequestParam(defaultValue = "7") @Min(value = 1, message = "days 最小为 1")
+            @Max(value = 90, message = "days 最大为 90") int days) {
         return RespModel.success(statsService.overview(tenantId, days));
     }
 
@@ -92,6 +98,10 @@ public class AdminController {
     @DeleteMapping("/tenant/{tenantId}")
     public RespModel<Map<String, Object>> purgeTenant(
             @Parameter(description = "租户ID") @PathVariable String tenantId) {
+        // 默认租户承载平台基础数据，禁止整租户清理，避免误操作造成不可恢复的数据丢失
+        if ("default".equalsIgnoreCase(tenantId)) {
+            throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "默认租户不允许清理");
+        }
         int taskCount = taskService.purgeTenant(tenantId);
         tenantQuotaService.deleteQuota(tenantId);
         Map<String, Object> result = new LinkedHashMap<>();

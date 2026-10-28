@@ -42,6 +42,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 
 /**
  * Agent 流水线实现：固定 4 轮串行，含分布式锁、进度更新、失败标记与事件发布
@@ -76,14 +77,20 @@ public class AgentServiceImpl implements AgentService {
 
     @Override
     public void executeAsync(String taskId) {
-        llmExecutor.execute(() -> {
-            try {
-                execute(taskId);
-            } catch (Exception e) {
-                log.error("异步任务执行异常 taskId={}", taskId, e);
-                updateFail(taskId, StrUtil.maxLength(e.getMessage(), ERROR_MSG_MAX_LENGTH));
-            }
-        });
+        try {
+            llmExecutor.execute(() -> {
+                try {
+                    execute(taskId);
+                } catch (Exception e) {
+                    log.error("异步任务执行异常 taskId={}", taskId, e);
+                    updateFail(taskId, StrUtil.maxLength(e.getMessage(), ERROR_MSG_MAX_LENGTH));
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            // LLM 线程池与队列已满：明确失败并提示重试，避免阻塞上传请求线程
+            log.warn("LLM 线程池已满，任务拒绝执行 taskId={}", taskId);
+            updateFail(taskId, "系统繁忙，解析队列已满，请稍后重试");
+        }
     }
 
     @Override
@@ -189,7 +196,8 @@ public class AgentServiceImpl implements AgentService {
             throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "仅解析成功的任务支持追问");
         }
         String lockKey = RedisKeyConstant.taskLock(taskId);
-        if (!redisLockUtil.tryLock(lockKey, 3, 60)) {
+        // 看门狗模式：LLM 调用耗时不固定，固定租期可能在调用期间到期导致重复追问
+        if (!redisLockUtil.tryLock(lockKey, 3)) {
             throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "任务正在处理中，请稍后追问");
         }
         try {

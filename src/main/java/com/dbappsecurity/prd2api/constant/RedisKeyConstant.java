@@ -18,6 +18,8 @@ package com.dbappsecurity.prd2api.constant;
  * prd2api:auth:user:tokens:{userId}       # 用户全部有效令牌集合，用于改密/封号时统一踢下线
  * prd2api:coupon:{couponId}:stock         # 优惠券剩余库存（Lua 原子扣减）
  * prd2api:coupon:{couponId}:user:{userId} # 用户已领取数量（Lua 原子累加）
+ * prd2api:limit:assistant:{tenant}:{user} # 桌面助手提问限流（滑动窗口）
+ * prd2api:assistant:clean:lock            # 助手会话过期清理分布式锁
  * </pre>
  */
 public final class RedisKeyConstant {
@@ -41,6 +43,10 @@ public final class RedisKeyConstant {
     public static final String AUTH_USER_TOKENS_PREFIX = "prd2api:auth:user:tokens:";
     /** 优惠券 Key 前缀，使用 {couponId} 作为 hash tag，保证库存与个人计数落在同一 Redis Cluster 槽位 */
     public static final String COUPON_PREFIX = "prd2api:coupon:";
+    /** 桌面助手提问限流 */
+    public static final String LIMIT_ASSISTANT_PREFIX = "prd2api:limit:assistant:";
+    /** 助手会话过期清理分布式锁 */
+    public static final String ASSISTANT_CLEAN_LOCK = "prd2api:assistant:clean:lock";
 
     public static String taskLock(String taskId) {
         return TASK_LOCK_PREFIX + taskId;
@@ -104,5 +110,9 @@ public final class RedisKeyConstant {
 
     public static String couponUserCount(Long couponId, String userId) {
         return COUPON_PREFIX + "{" + couponId + "}:user:" + userId;
+    }
+
+    public static String limitAssistant(String tenantId, String userKey) {
+        return LIMIT_ASSISTANT_PREFIX + tenantId + ":" + userKey;
     }
 }

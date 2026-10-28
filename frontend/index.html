@@ -334,7 +334,6 @@
     border-radius:16px; border:1px solid rgba(107,247,234,.3);
     background:linear-gradient(168deg, rgba(12,28,47,.98), rgba(6,15,28,.99));
     box-shadow:0 20px 50px rgba(0,0,0,.62), 0 0 0 1px rgba(255,111,181,.08) inset, 0 0 30px rgba(57,197,187,.14);
-    backdrop-filter:blur(18px);
     opacity:0; pointer-events:none; transform:translateY(10px) scale(.97);
     transition:opacity .22s ease, transform .26s cubic-bezier(.2,.8,.2,1);
   }
@@ -453,7 +452,6 @@
   }
   .mascot-name b{color:var(--aqua-lit)}
 
-  .stat-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:14px}
   .stat{
     border-radius:13px; padding:11px 12px; border:1px solid var(--line);
     background:linear-gradient(160deg, rgba(140,220,255,.06), rgba(140,220,255,.015));
@@ -801,7 +799,6 @@
   }
 
   /* 统计卡 */
-  .stat-grid{gap:10px}
   .stat{
     border:2px solid rgba(107,247,234,.26); border-radius:18px;
     background:linear-gradient(160deg, #143050, #0E2338);
@@ -813,6 +810,23 @@
   .stat:hover{transform:translateY(-3px) rotate(0); border-color:rgba(107,247,234,.6); box-shadow:0 6px 0 #061423}
   .stat .k{font-family:var(--display); font-weight:700; letter-spacing:.1em; text-transform:none; font-size:9px}
   .stat .v{font-size:24px}
+
+  /* 统计条：四格并排放进一张卡，压缩高度 */
+  .stat-strip{
+    display:grid; grid-template-columns:repeat(4,1fr); margin-top:14px;
+    border:2px solid rgba(107,247,234,.26); border-radius:16px;
+    background:linear-gradient(160deg, #143050, #0E2338);
+    box-shadow:0 3px 0 #061423; overflow:hidden;
+  }
+  .stat-strip .stat{
+    padding:8px 9px 9px; border:0; border-radius:0; background:transparent; box-shadow:none;
+    transform:none !important;
+  }
+  .stat-strip .stat + .stat{border-left:1px dashed rgba(107,247,234,.16)}
+  .stat-strip .stat:hover{background:rgba(107,247,234,.07); transform:none !important}
+  .stat-strip .stat .k{font-size:8px; letter-spacing:.04em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .stat-strip .stat .v{font-size:17px; margin-top:2px}
+  .stat-strip .stat .v.mid{font-size:11px; padding-top:4px; white-space:nowrap}
 
   /* 筛选 */
   .filter{
@@ -893,55 +907,60 @@
     font-family:var(--display); font-weight:600; font-size:11px;
   }
 
-  /* 登录 / 注册抽屉 */
-  .auth-drawer{padding:16px 26px 18px}
-  .auth-drawer.open{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); align-items:end}
-  .auth-actions{display:flex; gap:8px; align-items:end}
-  .auth-tip{
-    grid-column:1/-1; font-family:var(--mono); font-size:9.5px; color:var(--faint);
-    letter-spacing:.04em; line-height:1.7;
-  }
-
-  /* VIP 卡片 */
-  .vip-card{
-    margin-top:14px; padding:13px 14px; border-radius:18px;
-    border:2px solid rgba(155,123,255,.4);
+  /* 账户卡：会员额度 + 优惠券合并，Tab 切换 */
+  .acc-card{
+    margin-top:14px; padding:12px 13px 13px; border-radius:18px;
+    border:2px solid rgba(155,123,255,.38);
     background:linear-gradient(150deg, #1A2A52, #101F38);
-    box-shadow:0 4px 0 #061423, 0 0 24px rgba(155,123,255,.16);
+    box-shadow:0 4px 0 #061423, 0 0 24px rgba(155,123,255,.14);
   }
-  .vip-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
-  .vip-head .k{font-family:var(--mono); font-size:8px; letter-spacing:.18em; color:var(--faint); text-transform:uppercase}
-  .vip-plan{font-family:var(--display); font-weight:800; font-size:15px; margin-top:2px; color:var(--cream)}
+  .acc-top{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .acc-top .k{font-family:var(--mono); font-size:8px; letter-spacing:.18em; color:var(--faint); text-transform:uppercase}
+  .vip-plan{font-family:var(--display); font-weight:800; font-size:14px; margin-top:2px; color:var(--cream)}
   .vip-badge{
     font-family:var(--mono); font-size:8.5px; letter-spacing:.12em; padding:4px 9px; border-radius:9px;
     border:2px solid rgba(107,247,234,.4); background:rgba(8,24,38,.85); color:var(--aqua-lit);
     box-shadow:0 2px 0 #061423; white-space:nowrap;
   }
   .vip-badge.pro{border-color:rgba(255,111,181,.55); color:#FFB8DA}
-  .vip-metrics{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:11px}
+
+  .acc-tabs{display:flex; align-items:center; gap:6px; margin-top:11px; padding-bottom:9px; border-bottom:1px dashed rgba(107,247,234,.22)}
+  .acc-tab{
+    font-family:var(--display); font-weight:800; font-size:10px; letter-spacing:.02em;
+    padding:5px 12px; border-radius:10px; cursor:pointer; color:var(--dim);
+    border:2px solid rgba(107,247,234,.22); background:rgba(8,24,38,.5);
+    transition:transform .16s var(--pop), border-color .18s, color .18s, background .18s;
+  }
+  .acc-tab:hover{color:var(--cream); border-color:rgba(107,247,234,.5); transform:translateY(-1px)}
+  .acc-tab.active{
+    color:#04141F; border-color:#08202E;
+    background:linear-gradient(120deg, var(--aqua-lit), var(--aqua)); box-shadow:0 2px 0 #061423;
+  }
+  .acc-tab .n{font-family:var(--mono); font-size:8px; margin-left:4px}
+  .acc-tab .n:empty{display:none}
+  .acc-tab:focus-visible{outline:2px solid var(--aqua-lit); outline-offset:2px}
+
+  .acc-view{margin-top:10px; min-height:154px}
+  .acc-view[hidden]{display:none}
+  .acc-view-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .acc-view-head .k{font-family:var(--mono); font-size:8px; letter-spacing:.16em; color:var(--faint); text-transform:uppercase}
+  .acc-acts{display:flex; gap:5px}
+  .acc-acts .btn{padding:4px 8px; font-size:8px; border-radius:9px}
+
+  .vip-metrics{display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:2px}
   .vip-metric{
-    padding:8px 9px; border-radius:12px; border:1px solid rgba(107,247,234,.22);
+    padding:7px 8px; border-radius:11px; border:1px solid rgba(107,247,234,.2);
     background:rgba(8,24,38,.55);
   }
-  .vip-metric .k{font-family:var(--mono); font-size:7.5px; letter-spacing:.12em; color:var(--faint); text-transform:uppercase}
-  .vip-metric .v{font-family:var(--display); font-size:13px; font-weight:800; margin-top:2px; color:var(--aqua-lit)}
-  .vip-expire{font-family:var(--mono); font-size:9px; color:var(--dim); margin-top:9px; letter-spacing:.04em}
-  .vip-redeem{display:flex; gap:7px; margin-top:9px}
-  .vip-redeem input{padding:8px 10px; font-size:11px}
-  .vip-redeem .btn{padding:8px 12px; font-size:9px; flex:none}
+  .vip-metric .k{font-family:var(--mono); font-size:7px; letter-spacing:.1em; color:var(--faint); text-transform:uppercase}
+  .vip-metric .v{font-family:var(--display); font-size:12.5px; font-weight:800; margin-top:2px; color:var(--aqua-lit)}
+  .vip-expire{font-family:var(--mono); font-size:8.5px; color:var(--dim); margin-top:8px; letter-spacing:.04em; line-height:1.6}
+  .vip-redeem{display:flex; gap:6px; margin-top:8px}
+  .vip-redeem input{padding:7px 10px; font-size:11px}
+  .vip-redeem .btn{padding:7px 11px; font-size:9px; flex:none}
 
-  /* 优惠券中心 */
-  .coupon-card{
-    margin-top:14px; padding:13px 14px; border-radius:18px;
-    border:2px solid rgba(107,247,234,.28);
-    background:linear-gradient(150deg, #132B48, #0C1B30);
-    box-shadow:0 4px 0 #061423;
-  }
-  .coupon-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
-  .coupon-head .k{font-family:var(--mono); font-size:8px; letter-spacing:.18em; color:var(--faint); text-transform:uppercase}
-  .coupon-title{font-family:var(--display); font-weight:800; font-size:14px; margin-top:2px; color:var(--cream)}
-  .coupon-head .btn{padding:5px 9px; font-size:8.5px; flex:none}
-  .coupon-list{display:grid; gap:8px; margin-top:10px; max-height:214px; overflow:auto; padding-right:2px}
+  /* 优惠券（账户卡内的第二个 Tab） */
+  .coupon-list{display:grid; gap:7px; margin-top:8px; max-height:210px; overflow:auto; padding-right:2px}
   .coupon-item{
     display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:9px 10px;
     border-radius:14px; border:2px solid rgba(107,247,234,.22);
@@ -952,7 +971,11 @@
   .coupon-desc{font-family:var(--mono); font-size:8.5px; color:var(--dim); margin-top:3px; letter-spacing:.03em; line-height:1.5}
   .coupon-stock{font-family:var(--mono); font-size:8.5px; color:var(--aqua-lit); margin-top:3px}
   .coupon-item .btn{padding:7px 10px; font-size:9px; align-self:center; border-radius:11px}
-  .coupon-empty{font-family:var(--mono); font-size:9.5px; color:var(--faint); line-height:1.8; padding:8px 2px}
+  .coupon-empty{
+    font-family:var(--mono); font-size:9px; color:var(--faint); line-height:1.7;
+    padding:14px 10px; text-align:center; border-radius:11px;
+    border:1px dashed rgba(107,247,234,.2); background:rgba(8,24,38,.4);
+  }
   .coupon-sub{
     font-family:var(--mono); font-size:8px; letter-spacing:.16em; color:var(--faint);
     text-transform:uppercase; margin-top:12px;
@@ -1014,23 +1037,9 @@
       <span class="chip"><span class="dot on"></span><span id="tenantText">default</span></span>
       <span class="chip" id="userChip"><span class="dot" id="userDot"></span><span id="userText">未登录</span></span>
       <button class="btn ghost" id="authToggle">登录 / 注册</button>
-      <button class="btn ghost" id="couponToggle" hidden>优惠券管理</button>
       <button class="btn ghost" id="settingsToggle">接入设置</button>
     </div>
   </header>
-
-  <section class="drawer auth-drawer" id="authDrawer">
-    <div class="field"><label>租户</label><input id="authTenant" placeholder="default"></div>
-    <div class="field"><label>账号</label><input id="authUser" placeholder="alice" autocomplete="username"></div>
-    <div class="field"><label>密码</label><input id="authPass" type="password" placeholder="至少 8 位" autocomplete="current-password"></div>
-    <div class="field"><label>昵称（注册可选）</label><input id="authName" placeholder="留空使用账号"></div>
-    <div class="field auth-actions">
-      <button class="btn solid" id="btnLogin">登录</button>
-      <button class="btn" id="btnRegister">注册</button>
-      <button class="btn ghost" id="btnLogout">登出</button>
-    </div>
-    <div class="auth-tip">登录后请求使用 Authorization: Bearer 令牌，有效期 12 小时，活动自动续期；连续 5 次密码错误锁定 15 分钟。</div>
-  </section>
 
   <section class="drawer" id="settingsDrawer">
     <div class="field"><label>API Base</label><input id="cfgBase" placeholder="http://localhost:8080"></div>
@@ -1109,47 +1118,55 @@
           </div>
         </div>
 
-        <div class="stat-grid">
+        <div class="stat-strip">
           <div class="stat"><div class="k">Tasks</div><div class="v aqua" id="statTasks">0</div></div>
           <div class="stat"><div class="k">Success</div><div class="v aqua" id="statOk">0</div></div>
           <div class="stat"><div class="k">Running</div><div class="v pink" id="statRun">0</div></div>
           <div class="stat"><div class="k">Chroma</div><div class="v mid" id="statChroma">—</div></div>
         </div>
 
-        <div class="vip-card" id="vipCard">
-          <div class="vip-head">
+        <div class="acc-card" id="vipCard">
+          <div class="acc-top">
             <div>
-              <div class="k">Membership</div>
+              <div class="k">Account</div>
               <div class="vip-plan" id="vipPlan">访客额度</div>
             </div>
             <span class="vip-badge" id="vipBadge">GUEST</span>
           </div>
-          <div class="vip-metrics">
-            <div class="vip-metric"><div class="k">上传/日</div><div class="v" id="vipUpload">—</div></div>
-            <div class="vip-metric"><div class="k">Token/日</div><div class="v" id="vipToken">—</div></div>
-            <div class="vip-metric"><div class="k">并发</div><div class="v" id="vipConcurrent">—</div></div>
-          </div>
-          <div class="vip-expire" id="vipExpire">登录后查看额度与到期时间</div>
-          <div class="vip-redeem">
-            <input id="redeemInput" placeholder="输入兑换码" maxlength="32">
-            <button class="btn" id="btnRedeem">兑换</button>
-          </div>
-        </div>
 
-        <div class="coupon-card" id="couponCard">
-          <div class="coupon-head">
-            <div>
-              <div class="k">Coupons</div>
-              <div class="coupon-title">优惠券中心</div>
+          <div class="acc-tabs" id="accTabs" role="tablist">
+            <button class="acc-tab active" type="button" role="tab" aria-selected="true" data-acc="quota">额度</button>
+            <button class="acc-tab" type="button" role="tab" aria-selected="false" data-acc="coupon">优惠券<i class="n" id="couponCount"></i></button>
+          </div>
+
+          <div class="acc-view" id="accQuota" role="tabpanel">
+            <div class="vip-metrics">
+              <div class="vip-metric"><div class="k">上传/日</div><div class="v" id="vipUpload">—</div></div>
+              <div class="vip-metric"><div class="k">Token/日</div><div class="v" id="vipToken">—</div></div>
+              <div class="vip-metric"><div class="k">并发</div><div class="v" id="vipConcurrent">—</div></div>
             </div>
-            <button class="btn ghost" id="btnCouponRefresh">刷新</button>
+            <div class="vip-expire" id="vipExpire">登录后查看额度与到期时间</div>
+            <div class="vip-redeem">
+              <input id="redeemInput" placeholder="输入兑换码" maxlength="32">
+              <button class="btn" id="btnRedeem">兑换</button>
+            </div>
           </div>
-          <div class="coupon-list" id="couponList">
-            <div class="coupon-empty">登录后可领取限量优惠券</div>
-          </div>
-          <div class="coupon-sub">My Coupons · 我的优惠券</div>
-          <div class="coupon-mine" id="couponMine">
-            <div class="coupon-empty">暂无优惠券</div>
+
+          <div class="acc-view" id="accCoupon" role="tabpanel" hidden>
+            <div class="acc-view-head">
+              <span class="k">Available · 可领取</span>
+              <span class="acc-acts">
+                <button class="btn ghost" id="btnCouponRefresh">刷新</button>
+                <button class="btn ghost" id="couponToggle" hidden>管理</button>
+              </span>
+            </div>
+            <div class="coupon-list" id="couponList">
+              <div class="coupon-empty">登录后可领取限量优惠券</div>
+            </div>
+            <div class="coupon-sub">My Coupons · 我的优惠券</div>
+            <div class="coupon-mine" id="couponMine">
+              <div class="coupon-empty">暂无优惠券</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1265,7 +1282,8 @@
     exporting: false,
     mutating: false,
     fufuPos: null,
-    fufuPokeAt: 0,
+    fcSessionId: '',
+    fcTaskId: '',
     toastSig: '',
     toastAt: 0,
     couponLoading: false,
@@ -1394,16 +1412,7 @@
       const token = localStorage.getItem(AUTH_KEY);
       if (token) state.token = token;
     } catch (e) { /* 忽略本地存储异常 */ }
-    $('#authTenant').value = state.settings.tenant;
     updateAuthUI();
-  }
-
-  function saveAuth(data) {
-    state.token = data.token;
-    state.user = data.user;
-    localStorage.setItem(AUTH_KEY, data.token);
-    updateAuthUI();
-    loadCoupons();
   }
 
   function clearAuth() {
@@ -1420,7 +1429,18 @@
     $('#userDot').classList.toggle('on', !!user);
     $('#userDot').classList.toggle('off', !user);
     $('#tenantText').textContent = user && user.tenantId ? user.tenantId : state.settings.tenant;
+    const authBtn = $('#authToggle');
+    if (authBtn) {
+      authBtn.textContent = user ? '登出' : '登录 / 注册';
+      authBtn.title = user ? '退出当前账号' : '前往登录页';
+    }
     updateAdminUI();
+  }
+
+  /** 登录/注册走独立页面，登录后回到当前页 */
+  function goLogin() {
+    const next = location.pathname.split('/').pop() + location.search;
+    location.href = 'login.html?next=' + encodeURIComponent(next || 'index.html');
   }
 
   function isAdmin() {
@@ -1438,49 +1458,6 @@
       state.user = await api('/api/auth/me');
       updateAuthUI();
     } catch (e) { /* 令牌失效已由 api() 统一处理 */ }
-  }
-
-  function authPayload() {
-    const username = $('#authUser').value.trim();
-    const password = $('#authPass').value;
-    const tenantId = $('#authTenant').value.trim() || state.settings.tenant;
-    if (!username || !password) { toast('请输入账号与密码', 'warn'); return null; }
-    return { tenantId, username, password };
-  }
-
-  async function doLogin() {
-    const payload = authPayload();
-    if (!payload) return;
-    try {
-      const data = await api('/api/auth/login', { method: 'POST', body: payload });
-      saveAuth(data);
-      $('#authPass').value = '';
-      $('#authDrawer').classList.remove('open');
-      toast('欢迎回来，' + (data.user.displayName || data.user.username));
-      refreshVip();
-      loadQueue(true);
-      speak('登录成功，额度已同步 ♪', 'happy');
-    } catch (e) {
-      toast(e.message, 'warn');
-    }
-  }
-
-  async function doRegister() {
-    const payload = authPayload();
-    if (!payload) return;
-    if (payload.password.length < 8) { toast('密码至少 8 位', 'warn'); return; }
-    payload.displayName = $('#authName').value.trim() || undefined;
-    try {
-      const data = await api('/api/auth/register', { method: 'POST', body: payload });
-      saveAuth(data);
-      $('#authPass').value = '';
-      $('#authDrawer').classList.remove('open');
-      toast('注册成功，已自动登录');
-      refreshVip();
-      loadQueue(true);
-    } catch (e) {
-      toast(e.message, 'warn');
-    }
   }
 
   async function doLogout() {
@@ -1546,7 +1523,7 @@
   async function doRedeem() {
     if (!state.token) {
       toast('请先登录后再兑换', 'warn');
-      $('#authDrawer').classList.add('open');
+      goLogin();
       return;
     }
     const code = $('#redeemInput').value.trim();
@@ -1570,7 +1547,16 @@
     return plan + ' · ' + (c.durationDays || 0) + ' 天 · 每人限领 ' + (c.perUserLimit || 1);
   }
 
+  /** 我的优惠券里可用数量，显示在 Tab 上 */
+  function updateCouponCount(mine) {
+    const el = $('#couponCount');
+    if (!el) return;
+    const n = (mine || []).filter((c) => (c.status || 'UNUSED') === 'UNUSED').length;
+    el.textContent = n ? String(n) : '';
+  }
+
   function renderCoupons(available, mine) {
+    updateCouponCount(mine);
     const list = $('#couponList');
     if (!available.length) {
       list.innerHTML = '<div class="coupon-empty">暂无正在发放的优惠券，等管理员发券吧 ♪</div>';
@@ -1616,7 +1602,10 @@
   }
 
   async function loadCoupons() {
+    const refresh = $('#btnCouponRefresh');
+    if (refresh) refresh.hidden = !state.token;   // 未登录时刷新无意义，直接收起
     if (!state.token) {
+      updateCouponCount([]);
       $('#couponList').innerHTML = '<div class="coupon-empty">登录后可领取限量优惠券</div>';
       $('#couponMine').innerHTML = '<div class="coupon-empty">登录后查看我的优惠券</div>';
       return;
@@ -1639,7 +1628,7 @@
   async function claimCoupon(couponId) {
     if (!state.token) {
       toast('请先登录再领取', 'warn');
-      $('#authDrawer').classList.add('open');
+      goLogin();
       return;
     }
     const key = 'claim:' + couponId;
@@ -1788,7 +1777,7 @@
       try { json = text ? JSON.parse(text) : {}; } catch (e) { throw new Error('响应不是合法 JSON（HTTP ' + res.status + '）'); }
       if (json.code === 401) {
         clearAuth();
-        $('#authDrawer').classList.add('open');
+        toast('登录已失效，请重新登录', 'warn');
       }
       if (json.code !== 0) throw new Error(json.message || ('请求失败（HTTP ' + res.status + '）'));
       return json.data;
@@ -2380,14 +2369,16 @@
     const pw = panel.offsetWidth || 316;
     const ph = panel.offsetHeight || 320;
     const gap = 12;
+    // 优先贴在玩偶左侧；横向放不下时（窄屏）改放到玩偶正上方，避免盖住玩偶
     const leftOk = rect.left - pw - gap >= 8;
+    const aboveOk = rect.top - ph - gap >= 8;
     let x = leftOk ? rect.left - pw - gap : rect.right - pw;
-    let y = rect.bottom - ph;
+    let y = leftOk ? rect.bottom - ph : (aboveOk ? rect.top - ph - gap : rect.bottom - ph);
     x = Math.min(Math.max(8, x), Math.max(8, innerWidth - pw - 8));
     y = Math.min(Math.max(8, y), Math.max(8, innerHeight - ph - 8));
     panel.style.left = Math.round(x) + 'px';
     panel.style.top = Math.round(y) + 'px';
-    panel.style.transformOrigin = leftOk ? '100% 100%' : '0 100%';
+    panel.style.transformOrigin = leftOk ? '100% 100%' : '50% 100%';
   }
 
   function fcScroll() {
@@ -2478,15 +2469,24 @@
       run: () => { if (state.selectedId) retryTask(); else toast('请先在队列中选择一个任务', 'warn'); },
       say: '重试请求已发出，盯着进度条就好 ♪'
     },
+    detail: {
+      label: '打开任务详情',
+      run: () => {
+        if (!state.fcTaskId) { toast('还没有拿到任务 ID，先刷新队列吧', 'warn'); return; }
+        loadDetail(state.fcTaskId);
+        loadQueue(true);
+      },
+      say: () => state.fcTaskId ? '已经帮你打开任务详情面板 ♪' : '没有可打开的任务，先刷新队列。'
+    },
     md: { label: '导出 MD', run: () => exportReport('md'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
     html: { label: '导出 HTML', run: () => exportReport('html'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
     docx: { label: '导出 DOCX', run: () => exportReport('docx'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
     settings: { label: '打开接入设置', run: () => $('#settingsDrawer').classList.add('open'), say: '在打开的抽屉里填 API Base 和透传身份，保存后我会重新连一次。' },
-    auth: { label: '登录 / 注册', run: () => $('#authDrawer').classList.add('open'), say: '令牌有效期 12 小时，活动会自动续期。' },
-    vip: { label: '刷新额度', run: () => refreshVip(), say: '额度信息已刷新，左侧 Membership 卡片也是最新的。' },
+    auth: { label: '去登录', run: () => goLogin(), say: '令牌有效期 12 小时，活动会自动续期。' },
+    vip: { label: '刷新额度', run: () => refreshVip(), say: '额度信息已刷新，左侧账户卡的额度 Tab 也是最新的。' },
     rag: { label: '检测 RAG', run: () => refreshRag(), say: '已重新探测向量服务。' },
     home: { label: '回到右下角', run: () => { placeFufu(fufuHome()); saveFufuPos(); fufuChatPosition(); }, say: '回到右下角啦，随时点我 ♪' },
-    clear: { label: '清空对话', run: () => { $('#fcBody').innerHTML = ''; }, say: '对话清空啦，我们重新开始～' }
+    clear: { label: '清空对话', run: () => { $('#fcBody').innerHTML = ''; state.fcSessionId = ''; state.fcTaskId = ''; }, say: '对话清空啦，我们重新开始～' }
   };
 
   // 关键词 → 回答。按命中关键词长度累计打分，分数最高者生效
@@ -2605,6 +2605,77 @@
     fcThink(() => fcSay(html, acts));
   }
 
+  /* ── 后端问答 Agent ──────────────────────── */
+  // 后端返回的动作类型 → 界面可执行按钮，保持“问答 + 一键操作”闭环
+  function fcActsFor(action) {
+    if (!action || !action.type || action.type === 'NONE') return [];
+    switch (action.type) {
+      case 'TASK_LIST': return ['refresh', 'upload'];
+      case 'TASK_DETAIL': return state.fcTaskId ? ['detail', 'refresh'] : ['refresh'];
+      case 'QUOTA':
+      case 'VIP': return ['vip'];
+      case 'FILE_LIST': return ['upload', 'refresh'];
+      case 'ADMIN_STATS': return ['refresh'];
+      case 'NAVIGATE':
+        if (action.target === '/upload') return ['upload'];
+        if (action.target === '/vip') return ['vip'];
+        return ['refresh'];
+      default: return [];
+    }
+  }
+
+  // 调后端 /api/assistant/chat：规则类问题直接执行，开放问题由后端 LLM/知识库回答
+  async function fcAskBackend(text) {
+    // 助手接口需要登录态，未登录时先提示，避免白跑一次 401
+    if (!state.token) throw new Error('请先登录');
+    const data = await api('/api/assistant/chat', {
+      method: 'POST',
+      body: { sessionId: state.fcSessionId || undefined, message: text },
+      timeout: 60000
+    });
+    state.fcSessionId = data.sessionId || state.fcSessionId || '';
+    const action = data.action || null;
+    state.fcTaskId = action && action.type === 'TASK_DETAIL'
+      ? String(action.target || '').split('/').pop()
+      : state.fcTaskId;
+    // 后端回复是纯文本，转义后再换行渲染，避免任何 HTML 注入
+    const html = escapeHtml(data.reply || '').replace(/\n/g, '<br>');
+    return { html: html, acts: fcActsFor(action) };
+  }
+
+  // 先走后端，失败时区分“未登录”和“服务不可用”：前者引导登录，后者回落本地关键词应答
+  function fcAsk(text) {
+    fcThink(() => {
+      fcAskBackend(text)
+        .then((res) => fcSay(res.html, res.acts))
+        .catch((err) => {
+          if (/登录|401/.test(String(err && err.message))) {
+            fcSay('这个要读你的账号数据，先登录一下我吧 ♪', ['auth']);
+            return;
+          }
+          fcRespond(text);
+        });
+    });
+  }
+
+  // 首次打开时用后端推荐问题刷新快捷按钮
+  async function fcLoadTips() {
+    if (!state.token) return;
+    try {
+      const list = await api('/api/assistant/suggestions', { timeout: 8000 });
+      const box = $('#fcTips');
+      if (!box || !Array.isArray(list) || !list.length) return;
+      box.innerHTML = '';
+      list.slice(0, 4).forEach((text) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'fc-tip';
+        btn.textContent = text;
+        box.appendChild(btn);
+      });
+    } catch (e) { /* 推荐问题拉取失败不影响对话 */ }
+  }
+
   function fcRunAct(id) {
     const def = FC_ACTS[id];
     if (!def) return;
@@ -2628,6 +2699,7 @@
     if (!fufuChatGreeted) {
       fufuChatGreeted = true;
       fcSay(FC_WELCOME, ['upload', 'refresh', 'vip']);
+      fcLoadTips();
     }
     setMood('happy');
     if (innerWidth > 720) setTimeout(() => { const i = $('#fcInput'); if (i) i.focus({ preventScroll: true }); }, 220);
@@ -2638,9 +2710,9 @@
     if (!panel || !fufuChatOpen) return;
     fufuChatOpen = false;
     panel.classList.remove('open');
-    panel.setAttribute('aria-hidden', 'true');
     const fufu = $('#fufu');
-    if (fufu) fufu.focus({ preventScroll: true });
+    if (fufu) fufu.focus({ preventScroll: true });   // 先把焦点移出面板，再标记隐藏
+    panel.setAttribute('aria-hidden', 'true');
   }
 
   function fufuChatToggle() {
@@ -2654,7 +2726,7 @@
     if (!text) return;
     input.value = '';
     fcAskUser(text);
-    fcRespond(text);
+    fcAsk(text);
   }
 
   function bootFufuChat() {
@@ -2664,7 +2736,7 @@
     $('#fcClose').addEventListener('click', fufuChatHide);
     $('#fcSend').addEventListener('click', fcSubmit);
     $('#fcInput').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); fcSubmit(); }
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); fcSubmit(); }
       if (e.key === 'Escape') fufuChatHide();
     });
 
@@ -2673,7 +2745,7 @@
       if (!tip) return;
       const text = tip.textContent.trim();
       fcAskUser(text);
-      fcRespond(text);
+      fcAsk(text);
     });
 
     $('#fcBody').addEventListener('click', (e) => {
@@ -2704,8 +2776,10 @@
     placeFufu(saved && typeof saved.x === 'number' && typeof saved.y === 'number' ? saved : fufuHome());
 
     let bubbleTimer = 0;
+    let pokeTimer = 0;
 
     const say = (text, mood) => {
+      if (fufuChatOpen) return;   // 对话框展开时不弹气泡，避免和面板打架
       bubble.textContent = text;
       bubble.classList.add('show');
       clearTimeout(bubbleTimer);
@@ -2743,17 +2817,24 @@
       try { if (el.hasPointerCapture(ev.pointerId)) el.releasePointerCapture(ev.pointerId); } catch (e) { /* 忽略 */ }
       el.classList.remove('dragging');
       if (moved) { saveFufuPos(); return; }
-      const now = Date.now();
-      if (now - state.fufuPokeAt < 300) return;   // 双击的第二下不再切换面板
-      state.fufuPokeAt = now;
-      fufuChatToggle();
+      // 延迟 220ms 再切换，给双击留出识别窗口，避免归位时把面板点掉
+      clearTimeout(pokeTimer);
+      pokeTimer = setTimeout(() => { pokeTimer = 0; fufuChatToggle(); }, 220);
     };
 
     el.addEventListener('pointerup', endDrag);
     el.addEventListener('pointercancel', endDrag);
 
+    // 兜底：键盘、脚本或无障碍工具可能只派发合成 click（无 pointerup），这里补一次切换
+    el.addEventListener('click', () => {
+      if (moved || pokeTimer) return;
+      fufuChatToggle();
+    });
+
     // 双击归位到右下角默认位置
     el.addEventListener('dblclick', () => {
+      clearTimeout(pokeTimer);
+      pokeTimer = 0;
       placeFufu(fufuHome());
       saveFufuPos();
       if (fufuChatOpen) fufuChatPosition();
@@ -2765,19 +2846,34 @@
     });
   }
 
+  /** 账户卡：额度 / 优惠券 Tab 切换 */
+  function bootAccount() {
+    const tabs = $('#accTabs');
+    if (!tabs) return;
+    tabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('.acc-tab');
+      if (!btn) return;
+      tabs.querySelectorAll('.acc-tab').forEach((b) => {
+        const on = b === btn;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      const key = btn.dataset.acc;
+      $('#accQuota').hidden = key !== 'quota';
+      $('#accCoupon').hidden = key !== 'coupon';
+    });
+  }
+
   function bind() {
     document.querySelectorAll('.btn').forEach(addRipple);
 
     bootFufu();
     bootFufuChat();
+    bootAccount();
 
     $('#settingsToggle').addEventListener('click', () => $('#settingsDrawer').classList.toggle('open'));
-    $('#authToggle').addEventListener('click', () => $('#authDrawer').classList.toggle('open'));
-    $('#btnLogin').addEventListener('click', doLogin);
-    $('#btnRegister').addEventListener('click', doRegister);
-    $('#btnLogout').addEventListener('click', doLogout);
+    $('#authToggle').addEventListener('click', () => { if (state.token) doLogout(); else goLogin(); });
     $('#btnRedeem').addEventListener('click', doRedeem);
-    $('#authPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
     $('#redeemInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doRedeem(); });
     $('#btnCouponRefresh').addEventListener('click', () => loadCoupons());
     $('#couponList').addEventListener('click', (e) => {

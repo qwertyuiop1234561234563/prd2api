@@ -210,3 +210,32 @@ VALUES
 ('FREE', '免费版', 0, 0, 20, 300000, 2, 10, 'basic', 0, '未开通 VIP 时按所属租户配额使用', 1),
 ('BASIC', '基础版', 1, 30, 100, 2000000, 5, 20, 'standard', 1900, '适合个人与小团队的日常评审', 1),
 ('PRO', '专业版', 2, 30, 500, 10000000, 20, 50, 'pro', 9900, '适合高频评审与多项目并行', 1);
+
+-- 桌面助手（页面小人）会话表
+CREATE TABLE IF NOT EXISTS `assistant_chat_session` (
+  `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `title` VARCHAR(64) NOT NULL DEFAULT '' COMMENT '会话标题（首条提问摘要）',
+  `message_count` INT NOT NULL DEFAULT 0 COMMENT '消息条数',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT DEFAULT 0 COMMENT '逻辑删除 0 正常 1 已删除',
+  PRIMARY KEY (`session_id`),
+  KEY `idx_tenant_user_update`(`tenant_id`,`user_id`,`update_time`),
+  KEY `idx_update`(`update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手会话表';
+
+-- 桌面助手（页面小人）消息表
+CREATE TABLE IF NOT EXISTS `assistant_chat_message` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `role` VARCHAR(16) NOT NULL COMMENT 'USER / ASSISTANT',
+  `content` TEXT NOT NULL COMMENT '消息内容',
+  `intent` VARCHAR(32) DEFAULT NULL COMMENT '意图编码',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  KEY `idx_session`(`session_id`,`id`),
+  KEY `idx_tenant_user`(`tenant_id`,`user_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手消息表';

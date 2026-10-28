@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
+import java.util.concurrent.RejectedExecutionHandler;
 import java.util.concurrent.ThreadPoolExecutor;
 
 /**
@@ -22,23 +23,27 @@ public class AsyncThreadPoolConfig {
     @Bean(FILE_EXECUTOR)
     public ThreadPoolTaskExecutor fileExecutor(Prd2ApiProperties properties) {
         Prd2ApiProperties.Async async = properties.getAsync();
-        return buildExecutor("file-io-", async.getFileCore(), async.getFileMax(), async.getFileQueue());
+        // 文件 IO 耗时短，队列满时由调用线程兜底执行即可
+        return buildExecutor("file-io-", async.getFileCore(), async.getFileMax(), async.getFileQueue(),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Bean(LLM_EXECUTOR)
     public ThreadPoolTaskExecutor llmExecutor(Prd2ApiProperties properties) {
         Prd2ApiProperties.Async async = properties.getAsync();
-        return buildExecutor("llm-call-", async.getLlmCore(), async.getLlmMax(), async.getLlmQueue());
+        // LLM 流水线动辄数分钟，绝不能回落到 Web 请求线程执行，队列满直接拒绝并由调用方标记任务失败
+        return buildExecutor("llm-call-", async.getLlmCore(), async.getLlmMax(), async.getLlmQueue(),
+                new ThreadPoolExecutor.AbortPolicy());
     }
 
-    private ThreadPoolTaskExecutor buildExecutor(String prefix, int core, int max, int queue) {
+    private ThreadPoolTaskExecutor buildExecutor(String prefix, int core, int max, int queue,
+                                                 RejectedExecutionHandler handler) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(Math.max(1, core));
         executor.setMaxPoolSize(Math.max(Math.max(1, core), max));
         executor.setQueueCapacity(Math.max(1, queue));
         executor.setThreadNamePrefix(prefix);
-        // 队列满时由调用线程兜底执行，避免任务静默丢失
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setRejectedExecutionHandler(handler);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();

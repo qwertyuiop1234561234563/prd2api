@@ -29,6 +29,7 @@ import com.dbappsecurity.prd2api.vo.FileMetaVO;
 import com.dbappsecurity.prd2api.vo.FileUploadVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -113,16 +114,56 @@ public class FileServiceImpl implements FileService {
             SimilarResult similar = findSimilarDocument(tenantId, text, md5);
 
             String storePath = store(bytes, tenantId, suffix);
-            FileMeta meta = new FileMeta();
-            meta.setTenantId(tenantId);
-            meta.setFileName(fileName);
-            meta.setFileSuffix(suffix);
-            meta.setFileStorePath(storePath);
-            meta.setFileMd5(md5);
-            meta.setFileSize(file.getSize());
-            fileMetaMapper.insert(meta);
+            FileMeta archived = fileMetaMapper.selectAnyByTenantAndMd5(tenantId, md5);
+            FileMeta saved;
+            if (archived != null) {
+                // 同 md5 的历史记录已被软删除：复活该记录并指向本次写入的副本，
+                // 否则唯一索引仍包含已删除行，重复上传同一内容会直接报唯一键冲突
+                int revived = fileMetaMapper.reviveFileMeta(archived.getFileMetaId(),
+                        fileName, suffix, storePath, file.getSize());
+                if (revived == 0) {
+                    // 已被并发请求复活或仍是有效记录：复用现有记录并清理本次副本
+                    FileMeta active = fileMetaMapper.selectByTenantAndMd5(tenantId, md5);
+                    FileUtil.deleteLocalQuietly(storePath);
+                    if (active == null) {
+                        throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文件入库失败，请重试");
+                    }
+                    return FileUploadVO.from(active, true);
+                }
+                archived.setFileName(fileName);
+                archived.setFileSuffix(suffix);
+                archived.setFileStorePath(storePath);
+                archived.setFileSize(file.getSize());
+                archived.setDeleted(0);
+                archived.setCreateTime(LocalDateTime.now());
+                saved = archived;
+                log.info("复活已删除的同内容文件 tenantId={} md5={} fileMetaId={}",
+                        tenantId, md5, archived.getFileMetaId());
+            } else {
+                FileMeta meta = new FileMeta();
+                meta.setTenantId(tenantId);
+                meta.setFileName(fileName);
+                meta.setFileSuffix(suffix);
+                meta.setFileStorePath(storePath);
+                meta.setFileMd5(md5);
+                meta.setFileSize(file.getSize());
+                try {
+                    fileMetaMapper.insert(meta);
+                } catch (DuplicateKeyException e) {
+                    // 唯一索引兜底：并发上传同一文件时，后到者复用已入库记录并清理本次写入的副本
+                    FileMeta concurrent = fileMetaMapper.selectByTenantAndMd5(tenantId, md5);
+                    if (concurrent == null) {
+                        throw e;
+                    }
+                    FileUtil.deleteLocalQuietly(storePath);
+                    log.info("并发上传去重命中 tenantId={} md5={} fileMetaId={}",
+                            tenantId, md5, concurrent.getFileMetaId());
+                    return FileUploadVO.from(concurrent, true);
+                }
+                saved = meta;
+            }
 
-            FileUploadVO vo = FileUploadVO.from(meta, false);
+            FileUploadVO vo = FileUploadVO.from(saved, false);
             if (similar != null) {
                 vo.setSimilarFileMetaId(similar.meta().getFileMetaId());
                 vo.setSimilarity(Math.round(similar.score() * 1000) / 1000.0D);

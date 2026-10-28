@@ -36,6 +36,7 @@ import com.dbappsecurity.prd2api.util.MetricUtil;
 import com.dbappsecurity.prd2api.util.ReportParseUtil;
 import com.dbappsecurity.prd2api.util.TenantContextUtil;
 import com.dbappsecurity.prd2api.util.ChunkUtil;
+import com.dbappsecurity.prd2api.util.RedisLockUtil;
 import com.dbappsecurity.prd2api.vo.ReportExportVO;
 import com.dbappsecurity.prd2api.vo.ReviewIssueVO;
 import com.dbappsecurity.prd2api.vo.TaskDiffVO;
@@ -79,12 +80,15 @@ public class TaskServiceImpl implements TaskService {
     private final Prd2ApiProperties properties;
     private final StringRedisTemplate stringRedisTemplate;
     private final MetricUtil metricUtil;
+    private final RedisLockUtil redisLockUtil;
 
     @Override
     public TaskVO createTask(UploadFileDTO dto) {
         String tenantId = TenantContextUtil.requireTenantId();
         String userKey = TenantContextUtil.requireUserKey();
         Entry entry = null;
+        boolean locked = false;
+        String lockKey = null;
         try {
             entry = SphU.entry(SentinelConfig.RES_TASK_CREATE);
             FileMeta meta = fileMetaMapper.selectById(dto.getFileMetaId());
@@ -100,6 +104,12 @@ public class TaskServiceImpl implements TaskService {
 
             // 缓存未命中才占用并发配额，命中缓存直接返回历史结果
             if (cache == null) {
+                // 并发配额校验与任务落库必须串行，避免并发请求同时通过校验造成超限
+                lockKey = RedisKeyConstant.taskCreateLock(tenantId);
+                if (!redisLockUtil.tryLock(lockKey, 5, 10)) {
+                    throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "任务创建请求过多，请稍后重试");
+                }
+                locked = true;
                 quotaResolver.checkConcurrentQuota();
             }
 
@@ -136,6 +146,9 @@ public class TaskServiceImpl implements TaskService {
         } catch (BlockException e) {
             throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "任务创建请求过多，请稍后重试");
         } finally {
+            if (locked) {
+                redisLockUtil.unlock(lockKey);
+            }
             if (entry != null) {
                 entry.exit();
             }
@@ -203,17 +216,25 @@ public class TaskServiceImpl implements TaskService {
         }
         String modelCode = StrUtil.blankToDefault(dto.getModelCode(), task.getModelCode());
         LlmModelEnum.resolve(modelCode);
+        // 重试会重新占用并发额度，先校验再改状态，避免超额任务被排入线程池
+        quotaResolver.checkConcurrentQuota();
 
         // 重试前清除取消标记，避免重试任务立刻被中断
         stringRedisTemplate.delete(RedisKeyConstant.taskCancel(task.getTaskId()));
 
-        prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
+        // 条件更新：并发重试只有一次能成功，防止同一任务被重复提交执行
+        int rows = prdTaskMapper.update(null, new LambdaUpdateWrapper<PrdTask>()
                 .eq(PrdTask::getTaskId, task.getTaskId())
+                .in(PrdTask::getTaskStatus, TaskStatusEnum.FAIL.getCode(),
+                        TaskStatusEnum.INIT.getCode(), TaskStatusEnum.CANCELED.getCode())
                 .set(PrdTask::getTaskStatus, TaskStatusEnum.INIT.getCode())
                 .set(PrdTask::getProgress, 0)
                 .set(PrdTask::getErrorMsg, null)
                 .set(PrdTask::getFinishTime, null)
                 .set(PrdTask::getModelCode, modelCode));
+        if (rows == 0) {
+            throw new BizException(BizErrorCodeEnum.TASK_STATE_ERROR, "任务状态已变化，请刷新后重试");
+        }
         agentService.executeAsync(task.getTaskId());
         log.info("任务已重新提交 taskId={} modelCode={}", task.getTaskId(), modelCode);
     }
@@ -341,7 +362,8 @@ public class TaskServiceImpl implements TaskService {
         if (StrUtil.isBlank(token) || !token.matches("^[a-fA-F0-9]{32}$")) {
             throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID);
         }
-        String tokenValue = stringRedisTemplate.opsForValue().get(RedisKeyConstant.exportToken(token));
+        // 一次性凭证：读取即删除，避免下载链接被重复使用或转发滥用
+        String tokenValue = stringRedisTemplate.opsForValue().getAndDelete(RedisKeyConstant.exportToken(token));
         if (StrUtil.isBlank(tokenValue)) {
             throw new BizException(BizErrorCodeEnum.EXPORT_TOKEN_INVALID);
         }

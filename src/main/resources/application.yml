@@ -17,7 +17,7 @@ spring:
       max-request-size: 60MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:prd2api}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:prd2api}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
     username: ${DB_USER:root}
     password: ${DB_PWD:123456}
     hikari:
@@ -96,6 +96,8 @@ prd2api:
     require-identity: ${REQUIRE_IDENTITY:false}
     # 是否强制要求登录态（Bearer Token），生产建议 true；开启后不再接受 Header 身份透传
     require-login: ${REQUIRE_LOGIN:false}
+    # 是否信任 X-Forwarded-For，仅在请求必经可信代理（Nginx/网关）时开启
+    trust-forwarded-for: ${TRUST_FORWARDED_FOR:false}
     # 允许的跨域来源，留空表示 *，生产建议填写具体域名
     allowed-origins: []
     # IP 黑名单，命中直接拒绝
@@ -130,6 +132,33 @@ prd2api:
   vip:
     # VIP 到期降级与过期兑换码清理，每日 4 点执行
     expire-cron: "0 0 4 * * ?"
+  task:
+    # 僵死任务回收：进程崩溃/重启遗留的 INIT、PROCESS 任务在无分布式锁时置为 FAIL，用户可重试
+    recover-enabled: true
+    # 超过该时长未更新进度才判定为中断，需大于单阶段耗时，避免误杀长文档解析
+    recover-stale-minutes: 5
+    recover-initial-delay-ms: 20000
+    recover-interval-ms: 300000
+  assistant:
+    # 页面小人对话框后端：操作类问题走规则查询，自由问答走大模型，无密钥时回落内置知识库
+    enabled: ${ASSISTANT_ENABLED:true}
+    # 每人每分钟提问上限
+    rate-limit-per-minute: ${ASSISTANT_RATE_LIMIT:20}
+    # 多轮上下文消息条数
+    history-limit: 6
+    # 会话保留天数与清理时间
+    session-expire-days: ${ASSISTANT_SESSION_EXPIRE_DAYS:30}
+    clean-cron: "0 0 5 * * ?"
+  # 内置管理员：首次启动自动创建账号并开通最高等级 VIP；已存在账号不会覆盖密码
+  admin-init:
+    enabled: ${ADMIN_INIT_ENABLED:true}
+    tenant-id: ${ADMIN_INIT_TENANT:default}
+    username: ${ADMIN_INIT_USERNAME:admin}
+    password: ${ADMIN_INIT_PASSWORD:}
+    # 留空自动取等级最高的可开通套餐（当前为 PRO）
+    plan-code: ${ADMIN_INIT_PLAN:}
+    # 内置管理员套餐有效天数，0 表示沿用套餐自身天数
+    vip-days: ${ADMIN_INIT_VIP_DAYS:3650}
 
 springdoc:
   api-docs:

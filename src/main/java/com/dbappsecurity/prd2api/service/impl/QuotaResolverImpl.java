@@ -158,7 +158,8 @@ public class QuotaResolverImpl implements QuotaResolver {
     }
 
     /**
-     * 解析生效中的套餐；未开通、已过期或套餐已下架均视为无 VIP
+     * 解析生效中的套餐：未开通或已过期视为无 VIP。
+     * 套餐下架只影响新开通/领取，已开通用户仍按原套餐权益执行至到期。
      */
     private VipPlan resolveVipPlan(SysUser user) {
         if (user == null || StrUtil.isBlank(user.getVipPlanCode()) || user.getVipExpireTime() == null) {
@@ -170,10 +171,6 @@ public class QuotaResolverImpl implements QuotaResolver {
         if (!SysUser.STATUS_ACTIVE.equals(user.getStatus())) {
             return null;
         }
-        VipPlan plan = vipPlanMapper.selectById(user.getVipPlanCode());
-        if (plan == null || plan.getStatus() == null || plan.getStatus() != 1) {
-            return null;
-        }
-        return plan;
+        return vipPlanMapper.selectById(user.getVipPlanCode());
     }
 }

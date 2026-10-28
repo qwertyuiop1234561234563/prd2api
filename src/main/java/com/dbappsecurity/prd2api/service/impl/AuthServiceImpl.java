@@ -198,24 +198,21 @@ public class AuthServiceImpl implements AuthService {
 
     /**
      * 登录失败计数，达到上限锁定账号
+     * <p>
+     * 计数使用 SQL 原子自增，避免并发暴力破解时多次失败被读-写覆盖而绕过阈值。
      */
     private void handleLoginFail(SysUser user) {
-        int failCount = (user.getFailCount() == null ? 0 : user.getFailCount()) + 1;
         int limit = properties.getAuth().getLoginFailLimit();
+        sysUserMapper.increaseFailCount(user.getUserId());
+        SysUser latest = sysUserMapper.selectById(user.getUserId());
+        int failCount = latest == null || latest.getFailCount() == null ? 1 : latest.getFailCount();
         if (failCount >= limit) {
             LocalDateTime lockUntil = LocalDateTime.now().plusMinutes(properties.getAuth().getLockMinutes());
-            sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
-                    .eq(SysUser::getUserId, user.getUserId())
-                    .set(SysUser::getFailCount, 0)
-                    .set(SysUser::getLockUntil, lockUntil));
+            sysUserMapper.lockUser(user.getUserId(), lockUntil);
             log.warn("账号连续登录失败已锁定 userId={} lockUntil={}", user.getUserId(), lockUntil);
             throw new BizException(BizErrorCodeEnum.ACCOUNT_LOCKED,
                     "密码错误次数过多，账号已锁定 " + properties.getAuth().getLockMinutes() + " 分钟");
         }
-        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
-                .eq(SysUser::getUserId, user.getUserId())
-                .set(SysUser::getFailCount, failCount));
-        user.setFailCount(failCount);
         throw new BizException(BizErrorCodeEnum.UNAUTHORIZED,
                 "账号或密码错误，还可尝试 " + (limit - failCount) + " 次");
     }

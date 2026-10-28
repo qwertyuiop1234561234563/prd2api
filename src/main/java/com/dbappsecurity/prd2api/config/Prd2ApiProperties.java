@@ -31,6 +31,8 @@ public class Prd2ApiProperties {
     private Export export = new Export();
     private Async async = new Async();
     private Auth auth = new Auth();
+    private AdminInit adminInit = new AdminInit();
+    private Assistant assistant = new Assistant();
 
     @Data
     public static class Storage {
@@ -102,6 +104,8 @@ public class Prd2ApiProperties {
         private boolean requireIdentity = false;
         /** 是否强制要求登录态（Bearer Token），true 时不再接受 Header 身份透传 */
         private boolean requireLogin = false;
+        /** 是否信任 X-Forwarded-For 解析客户端真实 IP；仅在请求必经可信代理时开启，否则可被伪造绕过 IP 黑名单 */
+        private boolean trustForwardedFor = false;
     }
 
     @Data
@@ -141,5 +145,41 @@ public class Prd2ApiProperties {
         private int lockMinutes = 15;
         /** 允许自助注册的租户白名单，其他租户账号只能由管理员创建 */
         private List<String> selfRegisterTenants = new ArrayList<>(List.of("default"));
+    }
+
+    /**
+     * 内置管理员初始化：首次启动创建管理员账号，并开通最高等级 VIP
+     */
+    @Data
+    public static class AdminInit {
+        /** 是否启用启动初始化 */
+        private boolean enabled = true;
+        /** 所属租户 */
+        private String tenantId = "default";
+        /** 登录账号 */
+        private String username = "admin";
+        /** 初始密码，为空则跳过初始化；已存在账号不会覆盖密码 */
+        private String password = "";
+        /** 指定套餐编码，留空自动取等级最高的可开通套餐 */
+        private String planCode = "";
+        /** 内置管理员 VIP 有效期天数，0 表示沿用套餐自身有效天数 */
+        private int vipDays = 3650;
+    }
+
+    /**
+     * 桌面助手：页面小人对话框
+     */
+    @Data
+    public static class Assistant {
+        /** 是否启用助手接口 */
+        private boolean enabled = true;
+        /** 每人每分钟提问上限（滑动窗口），<=0 不限流 */
+        private int rateLimitPerMinute = 20;
+        /** 携带多少条历史消息作为多轮上下文 */
+        private int historyLimit = 6;
+        /** 会话保留天数，超期由定时任务清理 */
+        private int sessionExpireDays = 30;
+        /** 会话清理 cron */
+        private String cleanCron = "0 0 5 * * ?";
     }
 }

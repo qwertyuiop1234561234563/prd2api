@@ -111,8 +111,8 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 [frontend/index.html](frontend/index.html) 是零依赖单页控制台，直接用浏览器打开或由任意静态服务器托管：
 
 - 右上「接入设置」配置服务地址与未登录时的 Header 透传身份
-- 右上「登录 / 注册」完成账号登录，令牌保存在 localStorage，刷新后自动恢复
-- 左侧「Membership」卡片展示当前额度来源、上传/token/并发用量与到期时间，可直接输入兑换码兑换
+- 右上「登录 / 注册」跳转独立登录页 [frontend/login.html](frontend/login.html)，登录后回到控制台，令牌保存在 localStorage，刷新后自动恢复；已登录时该按钮变为「登出」
+- 左侧「Account」卡片用「额度 / 优惠券」两个 Tab 展示当前额度来源、上传/token/并发用量、兑换码入口与优惠券领取/我的券
 
 ## 鉴权约定
 
