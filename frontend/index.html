@@ -270,17 +270,11 @@
 
   /* ── 可拖拽的 fufu 玩偶 ──────────────────── */
   .fufu{
-    position:fixed; left:0; top:0; z-index:45; width:124px;
+    position:fixed; left:0; top:0; z-index:45; width:148px;
     cursor:grab; touch-action:none; user-select:none;
     filter:drop-shadow(0 8px 14px rgba(0,0,0,.5));
     transition:filter .2s;
   }
-  .fufu svg{width:100%; height:auto; display:block; overflow:visible; transition:transform .28s cubic-bezier(.34,1.56,.64,1)}
-  .fufu:hover{filter:drop-shadow(0 10px 18px rgba(0,0,0,.55)) drop-shadow(0 0 14px rgba(57,197,187,.4))}
-  .fufu.dragging{cursor:grabbing}
-  .fufu.dragging svg{transform:rotate(-5deg) scale(1.05)}
-  .fufu:focus-visible{outline:none}
-  .fufu:focus-visible svg{filter:drop-shadow(0 0 12px var(--aqua-lit))}
   .fufu-bubble{
     position:absolute; left:50%; bottom:calc(100% + 6px); width:max-content; max-width:190px;
     transform:translateX(-50%) translateY(4px) scale(.94);
@@ -291,44 +285,141 @@
   }
   .fufu-bubble.show{opacity:1; transform:translateX(-50%) translateY(0) scale(1)}
   .fufu-bubble::after{
-    content:""; position:absolute; left:50%; bottom:-6px; width:8px; height:8px; margin-left:-4px;
-    background:rgba(10,24,38,.95); border-right:2px solid rgba(107,247,234,.45);
-    border-bottom:2px solid rgba(107,247,234,.45); transform:rotate(45deg);
+    content:""; position:absolute; left:50%; bottom:-6px; margin-left:-4px;
+    width:8px; height:8px; background:rgba(10,24,38,.95);
+    border-right:2px solid rgba(107,247,234,.45); border-bottom:2px solid rgba(107,247,234,.45);
+    transform:rotate(45deg);
+  }
+  .fufu-img{
+    width:100%; height:auto; display:block;
+    transform-origin:50% 94%;
+    animation:plushBob 3.6s ease-in-out infinite;
+    transition:transform .28s cubic-bezier(.34,1.56,.64,1);
+    pointer-events:none; -webkit-user-drag:none;
+  }
+  @keyframes plushBob{
+    0%,100%{transform:translateY(0) rotate(-1.5deg)}
+    50%{transform:translateY(-3px) rotate(1.5deg)}
+  }
+  .fufu:hover{filter:drop-shadow(0 10px 18px rgba(0,0,0,.55)) drop-shadow(0 0 14px rgba(57,197,187,.4))}
+  .fufu.dragging{cursor:grabbing}
+  .fufu.dragging .fufu-img{
+    animation-play-state:paused;
+    transform:rotate(-6deg) scale(1.06);
+  }
+  .fufu:focus-visible{outline:none}
+  .fufu:focus-visible .fufu-img{filter:drop-shadow(0 0 12px var(--aqua-lit))}
+  .fufu.sing .fufu-img{animation:plushSing .62s ease-in-out infinite}
+  @keyframes plushSing{
+    0%,100%{transform:rotate(-3deg) translateY(0)}
+    50%{transform:rotate(3deg) translateY(-4px)}
+  }
+  .fufu.mood-happy .fufu-img{animation:plushJump .5s ease-in-out 3}
+  @keyframes plushJump{
+    0%,100%{transform:translateY(0) rotate(0)}
+    35%{transform:translateY(-13px) rotate(-3deg)}
+    65%{transform:translateY(-3px) rotate(2deg)}
+  }
+  .fufu.mood-sad .fufu-img{animation:plushSad 3.6s ease-in-out infinite}
+  @keyframes plushSad{
+    0%,100%{transform:rotate(-5deg) translateY(2px)}
+    50%{transform:rotate(-7deg) translateY(3px)}
   }
 
-  .fufu .f-body, .fufu .f-head, .fufu .f-tail-l, .fufu .f-tail-r,
-  .fufu .f-arm-r, .fufu .f-eye-l, .fufu .f-eye-r, .fufu .f-mouth-sing{transform-box:view-box}
-  .fufu .f-body{animation:plushBob 3.4s ease-in-out infinite; transform-origin:100px 174px}
-  @keyframes plushBob{ 0%,100%{transform:translateY(0) rotate(0)} 50%{transform:translateY(-2.5px) rotate(-1deg)} }
-  .fufu .f-head{animation:plushTilt 5.6s ease-in-out infinite; transform-origin:100px 128px}
-  @keyframes plushTilt{ 0%,100%{transform:rotate(-1.6deg)} 50%{transform:rotate(1.6deg)} }
-  .fufu .f-tail-l{animation:plushSwayL 4s ease-in-out infinite; transform-origin:82px 52px}
-  .fufu .f-tail-r{animation:plushSwayR 4.6s ease-in-out infinite; transform-origin:118px 52px}
-  @keyframes plushSwayL{ 0%,100%{transform:rotate(-3deg)} 50%{transform:rotate(2.4deg)} }
-  @keyframes plushSwayR{ 0%,100%{transform:rotate(3deg)} 50%{transform:rotate(-2.4deg)} }
-  .fufu .f-arm-r{animation:plushWave 2.6s ease-in-out infinite; transform-origin:120px 136px}
-  @keyframes plushWave{ 0%,100%{transform:rotate(-4deg)} 50%{transform:rotate(10deg)} }
-  .fufu .f-eye-l{animation:blink 5.4s infinite; transform-origin:80px 90px}
-  .fufu .f-eye-r{animation:blink 5.4s infinite .08s; transform-origin:120px 90px}
-  @keyframes blink{ 0%,89%,100%{transform:scaleY(1)} 93%,96%{transform:scaleY(.1)} }
-  .fufu .f-mouth-smile{transition:opacity .16s}
-  .fufu .f-mouth-sing{opacity:0; transform-origin:100px 114px}
-  .fufu.sing .f-mouth-smile{opacity:0}
-  .fufu.sing .f-mouth-sing{opacity:1; animation:sing .42s ease-in-out infinite}
-  @keyframes sing{ 0%,100%{transform:scaleY(.55)} 50%{transform:scaleY(1.35)} }
-  .fufu.sing .f-arm-r{animation-duration:.8s}
-  .fufu .f-note{opacity:0; animation:noteUp 3.4s linear infinite; transform-box:fill-box; transform-origin:50% 100%}
-  .fufu .f-note.n2{animation-delay:1.1s}
-  .fufu .f-note.n3{animation-delay:2.2s}
-  @keyframes noteUp{
-    0%{transform:translate(0,6px) scale(.6); opacity:0}
-    16%{opacity:.95}
-    100%{transform:translate(-14px,-38px) scale(1.05); opacity:0}
+  /* ── fufu 问答面板 ───────────────────────── */
+  .fufu-chat{
+    position:fixed; left:0; top:0; z-index:46;
+    width:min(316px, calc(100vw - 24px)); max-height:min(452px, calc(100vh - 132px));
+    display:flex; flex-direction:column; overflow:hidden;
+    border-radius:16px; border:1px solid rgba(107,247,234,.3);
+    background:linear-gradient(168deg, rgba(12,28,47,.98), rgba(6,15,28,.99));
+    box-shadow:0 20px 50px rgba(0,0,0,.62), 0 0 0 1px rgba(255,111,181,.08) inset, 0 0 30px rgba(57,197,187,.14);
+    backdrop-filter:blur(18px);
+    opacity:0; pointer-events:none; transform:translateY(10px) scale(.97);
+    transition:opacity .22s ease, transform .26s cubic-bezier(.2,.8,.2,1);
   }
-  .fufu.mood-happy{animation:plushJump .58s ease-in-out 3}
-  @keyframes plushJump{ 0%,100%{transform:translateY(0)} 40%{transform:translateY(-10px) rotate(-3deg)} }
-  .fufu.mood-sad .f-head{animation:plushSad 4s ease-in-out infinite}
-  @keyframes plushSad{ 0%,100%{transform:rotate(5deg) translateY(3px)} 50%{transform:rotate(8deg) translateY(4px)} }
+  .fufu-chat.open{opacity:1; pointer-events:auto; transform:none}
+  .fufu-chat::before{
+    content:""; position:absolute; left:0; right:0; top:0; height:1px; pointer-events:none;
+    background:linear-gradient(90deg, transparent, rgba(107,247,234,.75), rgba(255,111,181,.55), transparent);
+  }
+  .fc-head{
+    display:flex; align-items:center; gap:9px; padding:10px 12px; flex:none;
+    border-bottom:1px solid rgba(107,247,234,.14); background:rgba(8,20,34,.72);
+  }
+  .fc-avatar{
+    width:30px; height:30px; flex:none; border-radius:9px; overflow:hidden;
+    border:1px solid rgba(107,247,234,.32); background:rgba(57,197,187,.12);
+  }
+  .fc-avatar img{width:100%; height:100%; object-fit:contain; transform:scale(1.22) translateY(1px)}
+  .fc-title{flex:1; min-width:0}
+  .fc-title b{display:block; font-family:var(--display); font-weight:800; font-size:12px; letter-spacing:.02em}
+  .fc-title span{
+    display:flex; align-items:center; gap:5px; margin-top:2px;
+    font-family:var(--mono); font-size:7.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint);
+  }
+  .fc-dot{width:5px; height:5px; border-radius:50%; background:var(--aqua-lit); box-shadow:0 0 8px var(--aqua-lit); animation:breathe 2.2s ease-in-out infinite}
+  .fc-close{
+    width:24px; height:24px; flex:none; border-radius:8px; cursor:pointer;
+    display:grid; place-items:center; font-size:11px; line-height:1;
+    color:var(--dim); background:transparent; border:1px solid transparent; transition:.18s;
+  }
+  .fc-close:hover{color:var(--cream); border-color:var(--line); background:rgba(140,220,255,.06)}
+
+  .fc-body{
+    flex:1; min-height:0; overflow-y:auto; padding:12px 12px 6px;
+    display:flex; flex-direction:column; gap:9px;
+  }
+  .fc-body::-webkit-scrollbar{width:4px}
+  .fc-body::-webkit-scrollbar-thumb{background:rgba(107,247,234,.35); border-radius:4px}
+  .fc-msg{display:flex; flex-direction:column; gap:3px; max-width:100%; animation:fcIn .24s ease both}
+  .fc-msg.me{align-items:flex-end}
+  @keyframes fcIn{from{opacity:0; transform:translateY(6px)}}
+  .fc-who{font-family:var(--mono); font-size:7.5px; letter-spacing:.14em; color:var(--faint)}
+  .fc-bubble{
+    max-width:88%; padding:8px 11px; border-radius:13px; border-top-left-radius:4px;
+    font-size:11.5px; line-height:1.68; color:var(--cream);
+    background:rgba(140,220,255,.055); border:1px solid rgba(107,247,234,.18);
+    overflow-wrap:anywhere;
+  }
+  .fc-msg.me .fc-bubble{
+    border-radius:13px; border-top-right-radius:4px;
+    background:linear-gradient(135deg, rgba(57,197,187,.22), rgba(155,123,255,.16));
+    border-color:rgba(107,247,234,.3);
+  }
+  .fc-bubble b{color:var(--aqua-lit); font-weight:700}
+  .fc-msg.typing .fc-bubble{display:flex; align-items:center; gap:4px; padding:10px 12px}
+  .fc-msg.typing .fc-bubble i{
+    width:5px; height:5px; border-radius:50%; background:var(--aqua-lit); opacity:.3;
+    animation:fcDot 1s ease-in-out infinite;
+  }
+  .fc-msg.typing .fc-bubble i:nth-child(2){animation-delay:.15s}
+  .fc-msg.typing .fc-bubble i:nth-child(3){animation-delay:.3s}
+  @keyframes fcDot{0%,100%{opacity:.25; transform:translateY(0)}50%{opacity:1; transform:translateY(-2px)}}
+
+  .fc-acts{display:flex; flex-wrap:wrap; gap:5px; margin-top:7px}
+  .fc-act{
+    font-family:var(--mono); font-size:9px; letter-spacing:.05em; padding:5px 9px; cursor:pointer;
+    border-radius:8px; color:var(--aqua-lit); background:rgba(57,197,187,.12);
+    border:1px solid rgba(107,247,234,.35); transition:.18s;
+  }
+  .fc-act:hover{background:rgba(57,197,187,.26); border-color:var(--aqua-lit); transform:translateY(-1px)}
+  .fc-act:active{transform:translateY(0) scale(.97)}
+
+  .fc-tips{display:flex; flex-wrap:wrap; gap:5px; padding:0 12px 9px; flex:none}
+  .fc-tip{
+    font-family:var(--mono); font-size:8.5px; letter-spacing:.03em; padding:4px 8px; cursor:pointer;
+    border-radius:99px; color:var(--dim); background:transparent;
+    border:1px dashed rgba(107,247,234,.28); transition:.18s;
+  }
+  .fc-tip:hover{color:var(--aqua-lit); border-color:var(--aqua-lit); background:rgba(57,197,187,.08)}
+
+  .fc-input{
+    display:flex; gap:7px; padding:9px 10px; flex:none;
+    border-top:1px solid rgba(107,247,234,.14); background:rgba(6,14,27,.82);
+  }
+  .fc-input input{flex:1; min-width:0; font-size:11.5px; padding:8px 10px; border-radius:10px}
+  .fc-input .btn{padding:8px 12px; font-size:9px; border-radius:10px; flex:none}
 
   .speech{
     position:relative; z-index:3; margin:10px 10px 0;
@@ -838,6 +929,64 @@
   .vip-redeem{display:flex; gap:7px; margin-top:9px}
   .vip-redeem input{padding:8px 10px; font-size:11px}
   .vip-redeem .btn{padding:8px 12px; font-size:9px; flex:none}
+
+  /* 优惠券中心 */
+  .coupon-card{
+    margin-top:14px; padding:13px 14px; border-radius:18px;
+    border:2px solid rgba(107,247,234,.28);
+    background:linear-gradient(150deg, #132B48, #0C1B30);
+    box-shadow:0 4px 0 #061423;
+  }
+  .coupon-head{display:flex; align-items:center; justify-content:space-between; gap:8px}
+  .coupon-head .k{font-family:var(--mono); font-size:8px; letter-spacing:.18em; color:var(--faint); text-transform:uppercase}
+  .coupon-title{font-family:var(--display); font-weight:800; font-size:14px; margin-top:2px; color:var(--cream)}
+  .coupon-head .btn{padding:5px 9px; font-size:8.5px; flex:none}
+  .coupon-list{display:grid; gap:8px; margin-top:10px; max-height:214px; overflow:auto; padding-right:2px}
+  .coupon-item{
+    display:grid; grid-template-columns:1fr auto; gap:4px 10px; padding:9px 10px;
+    border-radius:14px; border:2px solid rgba(107,247,234,.22);
+    background:rgba(8,24,38,.6); box-shadow:0 2px 0 #061423;
+  }
+  .coupon-item.sold{border-style:dashed; opacity:.62}
+  .coupon-name{font-family:var(--display); font-weight:800; font-size:12px; color:var(--cream)}
+  .coupon-desc{font-family:var(--mono); font-size:8.5px; color:var(--dim); margin-top:3px; letter-spacing:.03em; line-height:1.5}
+  .coupon-stock{font-family:var(--mono); font-size:8.5px; color:var(--aqua-lit); margin-top:3px}
+  .coupon-item .btn{padding:7px 10px; font-size:9px; align-self:center; border-radius:11px}
+  .coupon-empty{font-family:var(--mono); font-size:9.5px; color:var(--faint); line-height:1.8; padding:8px 2px}
+  .coupon-sub{
+    font-family:var(--mono); font-size:8px; letter-spacing:.16em; color:var(--faint);
+    text-transform:uppercase; margin-top:12px;
+  }
+  .coupon-mine{display:grid; gap:7px; margin-top:8px; max-height:180px; overflow:auto; padding-right:2px}
+  .mine-item{
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:8px 10px; border-radius:12px; border:1px solid rgba(155,123,255,.28);
+    background:rgba(8,24,38,.5);
+  }
+  .mine-item .n{font-family:var(--display); font-weight:800; font-size:11px; color:var(--cream)}
+  .mine-item .m{font-family:var(--mono); font-size:8px; color:var(--dim); margin-top:2px}
+  .mine-item.used,.mine-item.expired{opacity:.55}
+  .mine-item .btn{padding:6px 9px; font-size:8.5px; border-radius:10px; flex:none}
+  .coupon-tag{
+    font-family:var(--mono); font-size:8px; letter-spacing:.08em; padding:3px 7px; border-radius:8px;
+    border:1px solid rgba(107,247,234,.35); color:var(--aqua-lit); flex:none;
+  }
+  .coupon-tag.used{border-color:rgba(155,123,255,.4); color:#C9B8FF}
+  .coupon-tag.expired{border-color:rgba(255,92,122,.4); color:var(--danger)}
+
+  /* 管理端优惠券面板 */
+  .admin-drawer{padding:16px 26px 18px}
+  .admin-drawer.open{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; align-items:end}
+  .admin-list{grid-column:1/-1; display:grid; gap:8px; max-height:230px; overflow:auto; margin-top:2px}
+  .admin-row{
+    display:grid; grid-template-columns:1.1fr .7fr .6fr .8fr auto; gap:8px; align-items:center;
+    padding:9px 10px; border-radius:12px; border:2px solid rgba(107,247,234,.2);
+    background:rgba(8,24,38,.55); box-shadow:0 2px 0 #061423;
+    font-family:var(--mono); font-size:9px; color:var(--dim);
+  }
+  .admin-row b{font-family:var(--display); font-size:11px; color:var(--cream)}
+  .admin-row .btn{padding:5px 8px; font-size:8px; border-radius:9px}
+  .admin-hint{grid-column:1/-1; font-family:var(--mono); font-size:9px; color:var(--faint); line-height:1.7}
 </style>
 </head>
 <body>
@@ -865,6 +1014,7 @@
       <span class="chip"><span class="dot on"></span><span id="tenantText">default</span></span>
       <span class="chip" id="userChip"><span class="dot" id="userDot"></span><span id="userText">未登录</span></span>
       <button class="btn ghost" id="authToggle">登录 / 注册</button>
+      <button class="btn ghost" id="couponToggle" hidden>优惠券管理</button>
       <button class="btn ghost" id="settingsToggle">接入设置</button>
     </div>
   </header>
@@ -891,6 +1041,21 @@
       <select id="cfgRole"><option value="USER">USER</option><option value="ADMIN">ADMIN</option></select>
     </div>
     <div class="field"><label>&nbsp;</label><button class="btn solid" id="cfgSave">保存并连接</button></div>
+  </section>
+
+  <section class="drawer admin-drawer" id="adminDrawer">
+    <div class="admin-hint">管理员发放限量优惠券：库存由 Redis Lua 脚本原子扣减，超出总量或每人限领都会直接拒绝，不会超领。</div>
+    <div class="field"><label>券名称</label><input id="cpName" placeholder="新人见面礼" maxlength="64"></div>
+    <div class="field"><label>套餐</label><select id="cpPlan"></select></div>
+    <div class="field"><label>开通天数（0=套餐天数）</label><input id="cpDays" type="number" min="0" max="3650" value="0"></div>
+    <div class="field"><label>发放总量</label><input id="cpStock" type="number" min="1" max="100000" value="100"></div>
+    <div class="field"><label>每人限领</label><input id="cpPerUser" type="number" min="1" max="100" value="1"></div>
+    <div class="field"><label>领取截止（天后，0=长期）</label><input id="cpExpire" type="number" min="0" max="3650" value="7"></div>
+    <div class="field"><label>领取后有效天数</label><input id="cpValid" type="number" min="0" max="3650" value="30"></div>
+    <div class="field"><label>&nbsp;</label><button class="btn solid" id="btnCreateCoupon">发放优惠券</button></div>
+    <div class="admin-list" id="adminCouponList">
+      <div class="admin-hint">尚未发放优惠券</div>
+    </div>
   </section>
 
   <main class="workspace">
@@ -970,6 +1135,23 @@
             <button class="btn" id="btnRedeem">兑换</button>
           </div>
         </div>
+
+        <div class="coupon-card" id="couponCard">
+          <div class="coupon-head">
+            <div>
+              <div class="k">Coupons</div>
+              <div class="coupon-title">优惠券中心</div>
+            </div>
+            <button class="btn ghost" id="btnCouponRefresh">刷新</button>
+          </div>
+          <div class="coupon-list" id="couponList">
+            <div class="coupon-empty">登录后可领取限量优惠券</div>
+          </div>
+          <div class="coupon-sub">My Coupons · 我的优惠券</div>
+          <div class="coupon-mine" id="couponMine">
+            <div class="coupon-empty">暂无优惠券</div>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1025,159 +1207,31 @@
   </main>
 </div>
 
-<div class="fufu" id="fufu" role="button" tabindex="0" aria-label="初音未来玩偶，可拖动；单击互动，双击归位">
+<div class="fufu" id="fufu" role="button" tabindex="0" aria-label="初音未来玩偶，可拖动；单击打开问答面板，双击归位">
   <div class="fufu-bubble" id="fufuBubble"></div>
-  <svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-    <defs>
-      <linearGradient id="fHair" x1="0" y1="0" x2=".35" y2="1">
-        <stop offset="0" stop-color="#A8FFF6"/>
-        <stop offset=".42" stop-color="#46DDCE"/>
-        <stop offset="1" stop-color="#1C93A6"/>
-      </linearGradient>
-      <linearGradient id="fHairDark" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#3FC6C2"/>
-        <stop offset="1" stop-color="#167E96"/>
-      </linearGradient>
-      <linearGradient id="fSkin" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#FFFCF8"/>
-        <stop offset="1" stop-color="#FFE4DA"/>
-      </linearGradient>
-      <linearGradient id="fCloth" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#F4F8FB"/>
-        <stop offset="1" stop-color="#BCCBD9"/>
-      </linearGradient>
-      <linearGradient id="fDark" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#414957"/>
-        <stop offset="1" stop-color="#232A37"/>
-      </linearGradient>
-      <linearGradient id="fPad" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#5CE3D5"/>
-        <stop offset="1" stop-color="#20A39B"/>
-      </linearGradient>
-      <linearGradient id="fBow" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2C4272"/>
-        <stop offset="1" stop-color="#16233F"/>
-      </linearGradient>
-    </defs>
+  <img class="fufu-img" src="assets/fufu.png" alt="初音未来 fufu 毛绒玩偶" draggable="false">
+</div>
 
-    <g class="f-body">
-      <!-- 双马尾：又粗又垂的毛绒束 -->
-      <g class="f-tail-l">
-        <path d="M 80 44 C 44 46 16 74 10 112 C 6 146 20 174 40 182
-                 C 58 189 72 177 66 162 C 58 144 52 128 56 104
-                 C 60 80 66 62 84 54 Z" fill="url(#fHair)"/>
-        <path d="M 34 68 C 20 86 16 112 20 134" stroke="#CCFFF8" stroke-width="4"
-              opacity=".38" fill="none" stroke-linecap="round"/>
-        <path d="M 54 84 C 46 106 46 130 52 148" stroke="#11809A" stroke-width="3"
-              opacity=".26" fill="none" stroke-linecap="round"/>
-      </g>
-      <g class="f-tail-r">
-        <path d="M 120 44 C 156 46 184 74 190 112 C 194 146 180 174 160 182
-                 C 142 189 128 177 134 162 C 142 144 148 128 144 104
-                 C 140 80 134 62 116 54 Z" fill="url(#fHair)"/>
-        <path d="M 166 68 C 180 86 184 112 180 134" stroke="#CCFFF8" stroke-width="4"
-              opacity=".38" fill="none" stroke-linecap="round"/>
-        <path d="M 146 84 C 154 106 154 130 148 148" stroke="#11809A" stroke-width="3"
-              opacity=".26" fill="none" stroke-linecap="round"/>
-      </g>
-
-      <!-- 小身体 -->
-      <path d="M 80 116 Q 100 110 120 116 L 126 156 Q 100 168 74 156 Z" fill="url(#fCloth)"/>
-
-      <!-- 腿与脚掌 -->
-      <rect x="62" y="144" width="32" height="32" rx="16" fill="url(#fDark)"/>
-      <rect x="106" y="144" width="32" height="32" rx="16" fill="url(#fDark)"/>
-      <ellipse cx="78" cy="173" rx="15.5" ry="10" fill="url(#fPad)"/>
-      <ellipse cx="122" cy="173" rx="15.5" ry="10" fill="url(#fPad)"/>
-      <ellipse cx="78" cy="169.5" rx="9" ry="3.6" fill="#A6FFF7" opacity=".32"/>
-      <ellipse cx="122" cy="169.5" rx="9" ry="3.6" fill="#A6FFF7" opacity=".32"/>
-
-      <!-- 藏青蝴蝶结 + 金色小怀表 -->
-      <path d="M 100 145 L 79 135 L 82 157 Z" fill="url(#fBow)"/>
-      <path d="M 100 145 L 121 135 L 118 157 Z" fill="url(#fBow)"/>
-      <circle cx="100" cy="146" r="5.4" fill="#1B2B50"/>
-      <circle cx="100" cy="163" r="7" fill="#EED08A"/>
-      <circle cx="100" cy="163" r="4.4" fill="#C9A45C"/>
-
-      <!-- 手臂 -->
-      <path d="M 80 136 Q 64 144 57 155" stroke="url(#fDark)" stroke-width="14"
-            stroke-linecap="round" fill="none"/>
-      <circle cx="54" cy="157" r="7" fill="url(#fSkin)"/>
-      <g class="f-arm-r">
-        <path d="M 120 136 Q 136 144 143 155" stroke="url(#fDark)" stroke-width="14"
-              stroke-linecap="round" fill="none"/>
-        <circle cx="146" cy="157" r="7" fill="url(#fSkin)"/>
-      </g>
-
-      <!-- 头 -->
-      <g class="f-head">
-        <ellipse cx="100" cy="82" rx="57" ry="50" fill="url(#fHairDark)"/>
-
-        <!-- 黑色耳机 + 粉色光环 -->
-        <circle cx="36" cy="92" r="14.5" fill="#31353F"/>
-        <circle cx="36" cy="92" r="10" fill="none" stroke="#EE6A9C" stroke-width="3"/>
-        <circle cx="36" cy="92" r="5.6" fill="#1B1E27"/>
-        <circle cx="164" cy="92" r="14.5" fill="#31353F"/>
-        <circle cx="164" cy="92" r="10" fill="none" stroke="#EE6A9C" stroke-width="3"/>
-        <circle cx="164" cy="92" r="5.6" fill="#1B1E27"/>
-
-        <!-- 脸 -->
-        <ellipse cx="100" cy="96" rx="50" ry="45" fill="url(#fSkin)"/>
-
-        <!-- 腮红 -->
-        <ellipse cx="63" cy="104" rx="10" ry="5.4" fill="#FF9CBB" opacity=".5"/>
-        <ellipse cx="137" cy="104" rx="10" ry="5.4" fill="#FF9CBB" opacity=".5"/>
-
-        <!-- 眼睛：简单竖向椭圆 -->
-        <g class="f-eye-l">
-          <ellipse cx="80" cy="90" rx="7.2" ry="11" fill="#3E2A26"/>
-          <circle cx="77.4" cy="85.4" r="2.1" fill="#FFFFFF" opacity=".85"/>
-        </g>
-        <g class="f-eye-r">
-          <ellipse cx="120" cy="90" rx="7.2" ry="11" fill="#3E2A26"/>
-          <circle cx="122.6" cy="85.4" r="2.1" fill="#FFFFFF" opacity=".85"/>
-        </g>
-
-        <!-- 嘴：张口笑 -->
-        <path class="f-mouth-smile" d="M 92 110 Q 100 111 108 110 Q 108 122 100 122 Q 92 122 92 110 Z"
-              fill="#D06B7C"/>
-        <path class="f-mouth-smile" d="M 95 118 Q 100 122 105 118 Q 102 122 100 122 Q 98 122 95 118 Z"
-              fill="#E98DA0"/>
-        <ellipse class="f-mouth-sing" cx="100" cy="114" rx="6" ry="8.4" fill="#C2556A"/>
-
-        <!-- 刘海 -->
-        <path d="M 43 72 C 41 44 66 24 100 24 C 134 24 159 44 157 72
-                 C 153 80 145 80 139 70 C 133 80 121 80 115 70
-                 C 109 80 95 80 89 70 C 83 80 71 80 65 70
-                 C 59 80 49 80 43 72 Z" fill="url(#fHair)"/>
-        <path d="M 62 54 Q 100 32 140 54" stroke="#D8FFF9" stroke-width="3" opacity=".36"
-              fill="none" stroke-linecap="round"/>
-
-        <!-- 侧发 -->
-        <path d="M 58 62 C 46 86 44 110 50 132 C 54 138 63 136 64 128
-                 C 60 108 62 84 70 66 Z" fill="url(#fHair)"/>
-        <path d="M 142 62 C 154 86 156 110 150 132 C 146 138 137 136 136 128
-                 C 140 108 138 84 130 66 Z" fill="url(#fHair)"/>
-      </g>
-
-      <!-- 音符 -->
-      <g transform="translate(178 46)"><g class="f-note">
-        <ellipse cx="0" cy="9" rx="3.4" ry="2.7" fill="#6BF7EA" transform="rotate(-18 0 9)"/>
-        <rect x="2.3" y="0" width="1.8" height="9" fill="#6BF7EA"/>
-        <path d="M 4.1 0 q 5.4 1.6 4.4 7" stroke="#6BF7EA" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-      </g></g>
-      <g transform="translate(186 70)"><g class="f-note n2">
-        <ellipse cx="0" cy="8" rx="3" ry="2.3" fill="#FF6FB5" transform="rotate(-18 0 8)"/>
-        <rect x="2" y="0" width="1.6" height="8" fill="#FF6FB5"/>
-        <path d="M 3.6 0 q 4.8 1.4 3.9 6" stroke="#FF6FB5" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      </g></g>
-      <g transform="translate(166 22)"><g class="f-note n3">
-        <ellipse cx="0" cy="8" rx="3" ry="2.3" fill="#9B7BFF" transform="rotate(-18 0 8)"/>
-        <rect x="2" y="0" width="1.6" height="8" fill="#9B7BFF"/>
-        <path d="M 3.6 0 q 4.8 1.4 3.9 6" stroke="#9B7BFF" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-      </g></g>
-    </g>
-  </svg>
+<div class="fufu-chat" id="fufuChat" role="dialog" aria-label="MIKU 助手对话框" aria-hidden="true">
+  <div class="fc-head">
+    <div class="fc-avatar"><img src="assets/fufu.png" alt=""></div>
+    <div class="fc-title">
+      <b>MIKU 助手</b>
+      <span><i class="fc-dot"></i>ONLINE · PRD2API AGENT</span>
+    </div>
+    <button class="fc-close" id="fcClose" type="button" aria-label="收起对话框">✕</button>
+  </div>
+  <div class="fc-body" id="fcBody" aria-live="polite"></div>
+  <div class="fc-tips" id="fcTips">
+    <button class="fc-tip" type="button">平台能做什么</button>
+    <button class="fc-tip" type="button">支持哪些格式</button>
+    <button class="fc-tip" type="button">任务进度</button>
+    <button class="fc-tip" type="button">我的额度</button>
+  </div>
+  <div class="fc-input">
+    <input id="fcInput" maxlength="120" placeholder="问我平台、流程，或让我帮你操作…" autocomplete="off">
+    <button class="btn solid" id="fcSend" type="button">发送</button>
+  </div>
 </div>
 
 <div class="toasts" id="toasts"></div>
@@ -1210,11 +1264,14 @@
     uploading: false,
     exporting: false,
     mutating: false,
-    pokeTimer: null,
     fufuPos: null,
     fufuPokeAt: 0,
     toastSig: '',
-    toastAt: 0
+    toastAt: 0,
+    couponLoading: false,
+    couponBusy: new Set(),
+    adminCoupons: [],
+    plans: []
   };
 
   /* ── 星尘 / 音符粒子 ─────────────────────── */
@@ -1346,6 +1403,7 @@
     state.user = data.user;
     localStorage.setItem(AUTH_KEY, data.token);
     updateAuthUI();
+    loadCoupons();
   }
 
   function clearAuth() {
@@ -1353,6 +1411,7 @@
     state.user = null;
     try { localStorage.removeItem(AUTH_KEY); } catch (e) { /* 忽略 */ }
     updateAuthUI();
+    loadCoupons();
   }
 
   function updateAuthUI() {
@@ -1361,6 +1420,16 @@
     $('#userDot').classList.toggle('on', !!user);
     $('#userDot').classList.toggle('off', !user);
     $('#tenantText').textContent = user && user.tenantId ? user.tenantId : state.settings.tenant;
+    updateAdminUI();
+  }
+
+  function isAdmin() {
+    return !!(state.user && state.user.role === 'ADMIN');
+  }
+
+  function updateAdminUI() {
+    $('#couponToggle').hidden = !isAdmin();
+    if (!isAdmin()) $('#adminDrawer').classList.remove('open');
   }
 
   async function loadMe() {
@@ -1488,6 +1557,204 @@
       toast('兑换成功，VIP 已生效 ♪');
       refreshVip();
       loadMe();
+    } catch (e) {
+      toast(e.message, 'warn');
+    }
+  }
+
+  /* ── 优惠券 ─────────────────────────────── */
+  const COUPON_STATUS_TEXT = { UNUSED: '待使用', USED: '已使用', EXPIRED: '已过期' };
+
+  function couponDesc(c) {
+    const plan = c.planName || c.planCode || '—';
+    return plan + ' · ' + (c.durationDays || 0) + ' 天 · 每人限领 ' + (c.perUserLimit || 1);
+  }
+
+  function renderCoupons(available, mine) {
+    const list = $('#couponList');
+    if (!available.length) {
+      list.innerHTML = '<div class="coupon-empty">暂无正在发放的优惠券，等管理员发券吧 ♪</div>';
+    } else {
+      list.innerHTML = available.map((c) => {
+        const sold = Number(c.remainStock) <= 0;
+        const capped = Number(c.claimedByMe) >= Number(c.perUserLimit || 1);
+        const disabled = sold || capped;
+        const label = sold ? '已领完' : capped ? '已达上限' : '领取';
+        return `
+          <div class="coupon-item${sold ? ' sold' : ''}">
+            <div>
+              <div class="coupon-name">${escapeHtml(c.couponName)}</div>
+              <div class="coupon-desc">${escapeHtml(couponDesc(c))}</div>
+              <div class="coupon-stock">剩余 ${c.remainStock}/${c.totalStock} · 我已领 ${c.claimedByMe || 0}${c.expireTime ? ' · ' + escapeHtml(fmtTime(c.expireTime)) + ' 截止' : ''}</div>
+            </div>
+            <button class="btn ${disabled ? 'ghost' : 'solid'} js-claim" data-id="${c.couponId}" ${disabled ? 'disabled' : ''}>${label}</button>
+          </div>`;
+      }).join('');
+    }
+
+    const mineBox = $('#couponMine');
+    if (!mine.length) {
+      mineBox.innerHTML = '<div class="coupon-empty">暂无优惠券，先去领取一张吧</div>';
+      return;
+    }
+    mineBox.innerHTML = mine.map((c) => {
+      const status = c.status || 'UNUSED';
+      const tag = COUPON_STATUS_TEXT[status] || status;
+      const expire = c.expireTime ? ' · 到期 ' + fmtTime(c.expireTime) : ' · 长期有效';
+      const action = status === 'UNUSED'
+        ? `<button class="btn solid js-use" data-id="${c.id}">使用</button>`
+        : `<span class="coupon-tag ${status === 'USED' ? 'used' : 'expired'}">${tag}</span>`;
+      return `
+        <div class="mine-item ${status === 'USED' ? 'used' : status === 'EXPIRED' ? 'expired' : ''}">
+          <div>
+            <div class="n">${escapeHtml(c.couponName || '优惠券')}</div>
+            <div class="m">${escapeHtml(c.planName || c.planCode || '—')} · ${c.durationDays || 0} 天${escapeHtml(expire)}</div>
+          </div>
+          ${action}
+        </div>`;
+    }).join('');
+  }
+
+  async function loadCoupons() {
+    if (!state.token) {
+      $('#couponList').innerHTML = '<div class="coupon-empty">登录后可领取限量优惠券</div>';
+      $('#couponMine').innerHTML = '<div class="coupon-empty">登录后查看我的优惠券</div>';
+      return;
+    }
+    if (state.couponLoading) return;
+    state.couponLoading = true;
+    try {
+      const [available, mine] = await Promise.all([
+        api('/api/coupon/available'),
+        api('/api/coupon/my')
+      ]);
+      renderCoupons(available || [], mine || []);
+    } catch (e) {
+      $('#couponList').innerHTML = '<div class="coupon-empty">' + escapeHtml(e.message) + '</div>';
+    } finally {
+      state.couponLoading = false;
+    }
+  }
+
+  async function claimCoupon(couponId) {
+    if (!state.token) {
+      toast('请先登录再领取', 'warn');
+      $('#authDrawer').classList.add('open');
+      return;
+    }
+    const key = 'claim:' + couponId;
+    if (state.couponBusy.has(key)) return;   // 连点只发一次请求
+    state.couponBusy.add(key);
+    try {
+      await api('/api/coupon/' + encodeURIComponent(couponId) + '/claim', { method: 'POST' });
+      toast('领取成功，去「我的优惠券」使用吧 ♪');
+      speak('优惠券到手，记得用掉哦 ♪', 'happy');
+      await loadCoupons();
+    } catch (e) {
+      toast(e.message, 'warn');
+      await loadCoupons();
+    } finally {
+      state.couponBusy.delete(key);
+    }
+  }
+
+  async function useCoupon(userCouponId) {
+    const key = 'use:' + userCouponId;
+    if (state.couponBusy.has(key)) return;
+    state.couponBusy.add(key);
+    try {
+      await api('/api/coupon/' + encodeURIComponent(userCouponId) + '/use', { method: 'POST' });
+      toast('核销成功，VIP 已开通 ♪');
+      speak('额度升级完成，继续唱需求吧 ♪', 'happy');
+      refreshVip();
+      loadMe();
+      await loadCoupons();
+    } catch (e) {
+      toast(e.message, 'warn');
+      await loadCoupons();
+    } finally {
+      state.couponBusy.delete(key);
+    }
+  }
+
+  /* ── 管理员发券 ─────────────────────────── */
+  async function loadPlans() {
+    if (state.plans.length) return;
+    try {
+      state.plans = await api('/api/vip/plans') || [];
+      $('#cpPlan').innerHTML = state.plans.map((p) =>
+        `<option value="${escapeHtml(p.planCode)}">${escapeHtml(p.planName)} · ${p.durationDays || 0} 天</option>`).join('');
+    } catch (e) { /* 套餐加载失败不阻断面板 */ }
+  }
+
+  async function loadAdminCoupons() {
+    try {
+      const page = await api('/api/admin/coupon/page?pageNum=1&pageSize=20');
+      state.adminCoupons = page.records || [];
+      renderAdminCoupons();
+    } catch (e) {
+      $('#adminCouponList').innerHTML = '<div class="admin-hint">' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function renderAdminCoupons() {
+    const box = $('#adminCouponList');
+    if (!state.adminCoupons.length) {
+      box.innerHTML = '<div class="admin-hint">尚未发放优惠券</div>';
+      return;
+    }
+    box.innerHTML = state.adminCoupons.map((c) => `
+      <div class="admin-row">
+        <b>${escapeHtml(c.couponName)}</b>
+        <span>${escapeHtml(c.planCode)}</span>
+        <span>${c.claimedCount || 0}/${c.totalStock}</span>
+        <span>${c.status === 1 ? '领取中' : '已下架'}</span>
+        ${c.status === 1 ? `<button class="btn js-offline" data-id="${c.couponId}">下架</button>` : '<span>—</span>'}
+      </div>`).join('');
+  }
+
+  async function createCoupon() {
+    const couponName = $('#cpName').value.trim();
+    if (!couponName) { toast('请输入优惠券名称', 'warn'); return; }
+    if (!state.plans.length) { toast('套餐列表尚未加载，请稍后重试', 'warn'); return; }
+    const totalStock = Number($('#cpStock').value);
+    const perUserLimit = Number($('#cpPerUser').value);
+    if (!Number.isInteger(totalStock) || totalStock < 1) { toast('发放总量至少为 1', 'warn'); return; }
+    if (!Number.isInteger(perUserLimit) || perUserLimit < 1) { toast('每人限领至少为 1', 'warn'); return; }
+    if (perUserLimit > totalStock) { toast('每人限领不能大于发放总量', 'warn'); return; }
+    const btn = $('#btnCreateCoupon');
+    btn.disabled = true;
+    try {
+      await api('/api/admin/coupon', {
+        method: 'POST',
+        body: {
+          couponName,
+          planCode: $('#cpPlan').value,
+          durationDays: Number($('#cpDays').value) || 0,
+          totalStock,
+          perUserLimit,
+          expireDays: Number($('#cpExpire').value) || 0,
+          validDays: Number($('#cpValid').value) || 0
+        }
+      });
+      toast('优惠券已发放，库存由 Lua 脚本原子扣减 ♪');
+      $('#cpName').value = '';
+      await loadAdminCoupons();
+      await loadCoupons();
+    } catch (e) {
+      toast(e.message, 'warn');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function offlineCoupon(couponId) {
+    if (!confirm('下架该优惠券？已领取的用户仍可正常使用')) return;
+    try {
+      await api('/api/admin/coupon/' + encodeURIComponent(couponId), { method: 'DELETE' });
+      toast('优惠券已下架');
+      await loadAdminCoupons();
+      await loadCoupons();
     } catch (e) {
       toast(e.message, 'warn');
     }
@@ -2079,16 +2346,16 @@
 
   function fufuHome() {
     const el = $('#fufu');
-    const w = el ? el.offsetWidth : 124;
-    const h = el ? el.offsetHeight : 124;
-    return { x: Math.max(8, innerWidth - w - 20), y: Math.max(8, innerHeight - h - 20) };
+    const w = el ? el.offsetWidth : 148;
+    const h = el ? el.offsetHeight : 148;
+    return { x: Math.max(8, innerWidth - w - 20), y: Math.max(8, innerHeight - h - 96) };
   }
 
   function placeFufu(pos) {
     const el = $('#fufu');
     if (!el || !pos) return;
-    const w = el.offsetWidth || 124;
-    const h = el.offsetHeight || 124;
+    const w = el.offsetWidth || 148;
+    const h = el.offsetHeight || 148;
     const x = Math.min(Math.max(0, pos.x), Math.max(0, innerWidth - w));
     const y = Math.min(Math.max(0, pos.y), Math.max(0, innerHeight - h));
     state.fufuPos = { x, y };
@@ -2097,6 +2364,334 @@
 
   function saveFufuPos() {
     try { localStorage.setItem(FUFU_POS_KEY, JSON.stringify(state.fufuPos)); } catch (e) { /* 隐私模式忽略 */ }
+  }
+
+  /* ── fufu 问答 Agent（纯前端本地知识库 + 界面操作） ── */
+  let fufuChatOpen = false;
+  let fufuChatGreeted = false;
+
+  const FC_WELCOME = '在的 ♪ 我是 MIKU，Prd2Api 的看板助手。平台能力、上传解析、报告导出、额度配置都可以问我，也可以让我帮你直接操作。';
+
+  function fufuChatPosition() {
+    const panel = $('#fufuChat');
+    const fufu = $('#fufu');
+    if (!panel || !fufu) return;
+    const rect = fufu.getBoundingClientRect();
+    const pw = panel.offsetWidth || 316;
+    const ph = panel.offsetHeight || 320;
+    const gap = 12;
+    const leftOk = rect.left - pw - gap >= 8;
+    let x = leftOk ? rect.left - pw - gap : rect.right - pw;
+    let y = rect.bottom - ph;
+    x = Math.min(Math.max(8, x), Math.max(8, innerWidth - pw - 8));
+    y = Math.min(Math.max(8, y), Math.max(8, innerHeight - ph - 8));
+    panel.style.left = Math.round(x) + 'px';
+    panel.style.top = Math.round(y) + 'px';
+    panel.style.transformOrigin = leftOk ? '100% 100%' : '0 100%';
+  }
+
+  function fcScroll() {
+    const body = $('#fcBody');
+    if (body) body.scrollTop = body.scrollHeight;
+  }
+
+  function fcNode(role, html, acts) {
+    const body = $('#fcBody');
+    if (!body) return null;
+    const msg = document.createElement('div');
+    msg.className = 'fc-msg ' + role;
+    msg.innerHTML = (role === 'bot' ? '<span class="fc-who">MIKU</span>' : '') +
+      '<div class="fc-bubble">' + html + '</div>';
+    if (acts && acts.length) {
+      const row = document.createElement('div');
+      row.className = 'fc-acts';
+      acts.forEach((id) => {
+        const def = FC_ACTS[id];
+        if (!def) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'fc-act';
+        btn.dataset.act = id;
+        btn.textContent = def.label;
+        row.appendChild(btn);
+      });
+      if (row.children.length) msg.lastElementChild.appendChild(row);
+    }
+    body.appendChild(msg);
+    fcScroll();
+    fufuChatPosition();
+    return msg;
+  }
+
+  function fcSay(html, acts) { fcNode('bot', html, acts); }
+
+  function fcAskUser(text) { fcNode('me', escapeHtml(text)); }
+
+  // 打字中的三个点，延时后替换成正式回复
+  function fcThink(reply) {
+    const body = $('#fcBody');
+    if (!body) return;
+    const node = document.createElement('div');
+    node.className = 'fc-msg bot typing';
+    node.innerHTML = '<span class="fc-who">MIKU</span><div class="fc-bubble"><i></i><i></i><i></i></div>';
+    body.appendChild(node);
+    fcScroll();
+    fufuChatPosition();
+    setSinging(true);
+    setTimeout(() => {
+      if (!node.isConnected) return;
+      node.remove();
+      reply();
+      setSinging(state.tasks.some((t) => t.taskStatus === 'INIT' || t.taskStatus === 'PROCESS'));
+    }, 480);
+  }
+
+  function fcQueueText() {
+    const total = state.tasks.length;
+    const run = state.tasks.filter((t) => t.taskStatus === 'INIT' || t.taskStatus === 'PROCESS').length;
+    const ok = state.tasks.filter((t) => t.taskStatus === 'SUCCESS').length;
+    const fail = state.tasks.filter((t) => t.taskStatus === 'FAIL').length;
+    if (!total) return '队列还是空的，先上传一份 PRD 吧 ♪';
+    return '队列里共 <b>' + total + '</b> 个任务：运行中 <b>' + run + '</b>，已完成 <b>' + ok + '</b>，失败 <b>' + fail + '</b>。点左侧卡片就能看报告详情。';
+  }
+
+  function fcQuotaText() {
+    const plan = String($('#vipPlan').textContent || '').trim();
+    const up = String($('#vipUpload').textContent || '').trim();
+    const tk = String($('#vipToken').textContent || '').trim();
+    const cc = String($('#vipConcurrent').textContent || '').trim();
+    return '当前套餐 <b>' + escapeHtml(plan) + '</b>，上传/日 <b>' + escapeHtml(up) + '</b>，Token/日 <b>' + escapeHtml(tk) + '</b>，并发 <b>' + escapeHtml(cc) + '</b>。' +
+      '<br>BASIC ¥19/30 天（100 上传/日、5 并发、20MB）；PRO ¥99/30 天（500 上传/日、20 并发、50MB）。';
+  }
+
+  // 可点击的执行动作：按钮文案 + 真正的前端操作 + 操作后的回应
+  const FC_ACTS = {
+    upload: { label: '选择文件', run: () => $('#fileInput').click(), say: '文件选择器打开了，选一份 PRD 丢给我 ♪' },
+    parse: {
+      label: '开始解析 ♪',
+      run: () => { state.fileMetaId ? createTask() : $('#fileInput').click(); },
+      say: () => state.fileMetaId ? '已经排进四阶段流水线，我会盯着进度～' : '还没有入库的文档，先选一份 PRD 吧。'
+    },
+    refresh: { label: '刷新队列', run: () => loadQueue(false), say: () => '队列刷新好了。' + fcQueueText() },
+    retry: {
+      label: '重试当前任务',
+      run: () => { if (state.selectedId) retryTask(); else toast('请先在队列中选择一个任务', 'warn'); },
+      say: '重试请求已发出，盯着进度条就好 ♪'
+    },
+    md: { label: '导出 MD', run: () => exportReport('md'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
+    html: { label: '导出 HTML', run: () => exportReport('html'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
+    docx: { label: '导出 DOCX', run: () => exportReport('docx'), say: () => state.selectedId ? '导出链接已生成，浏览器里就能保存。' : '先在左侧队列点一份报告，我才能导出。' },
+    settings: { label: '打开接入设置', run: () => $('#settingsDrawer').classList.add('open'), say: '在打开的抽屉里填 API Base 和透传身份，保存后我会重新连一次。' },
+    auth: { label: '登录 / 注册', run: () => $('#authDrawer').classList.add('open'), say: '令牌有效期 12 小时，活动会自动续期。' },
+    vip: { label: '刷新额度', run: () => refreshVip(), say: '额度信息已刷新，左侧 Membership 卡片也是最新的。' },
+    rag: { label: '检测 RAG', run: () => refreshRag(), say: '已重新探测向量服务。' },
+    home: { label: '回到右下角', run: () => { placeFufu(fufuHome()); saveFufuPos(); fufuChatPosition(); }, say: '回到右下角啦，随时点我 ♪' },
+    clear: { label: '清空对话', run: () => { $('#fcBody').innerHTML = ''; }, say: '对话清空啦，我们重新开始～' }
+  };
+
+  // 关键词 → 回答。按命中关键词长度累计打分，分数最高者生效
+  const FC_INTENTS = [
+    { k: ['你好', 'hello', '嗨', '在吗', '在不在', '早安', '早上好', '晚上好'],
+      ans: () => '在的 ♪ 想聊聊平台，还是让我帮你上传、刷新或导出？' },
+
+    { k: ['能做什么', '会什么', '功能', '帮助', '怎么用', '使用说明', '介绍', '你是谁'],
+      ans: () => '我能做三件事：<br>1. 回答平台问题（格式、流程、额度、安全…）<br>2. 帮你操作界面（上传、解析、刷新、导出、打开设置）<br>3. 陪你聊两句，顺便把需求唱成结构 ♪',
+      acts: () => ['upload', 'refresh', 'vip'] },
+
+    { k: ['上传', '导入', '传文件', '拖入', '选文件', '选择文件', '丢文件'],
+      ans: () => '把文件拖进左侧「文档接入」，或者点我下面的按钮打开选择器。<b>md / txt / docx / pdf</b>，单文件 20MB 以内（PRO 50MB）。',
+      acts: () => ['upload'] },
+
+    { k: ['格式', '文件类型', '后缀', '支持什么', '支持哪些', 'pdf', 'docx', 'txt', '大小', 'mb'],
+      ans: () => '支持 <b>md / txt / docx / pdf</b>，单文件 20MB（PRO 50MB）。上传时会做后缀 + 魔数双校验、md5 去重和相似度查重。',
+      acts: () => ['upload'] },
+
+    { k: ['开始解析', '创建任务', '解析一下', '开工', '跑起来'],
+      ans: () => state.fileMetaId ? '文档已在库，我这就排进流水线 ♪' : '还没有待解析的文档哦，先选一份 PRD 吧。',
+      acts: () => state.fileMetaId ? ['parse'] : ['upload'] },
+
+    { k: ['失败', '报错', '错误', '重试', '没成功'],
+      ans: () => state.selectedId ? '当前任务失败可以点右上角「重试」，我用同一份文档再跑一遍。' : '哪个任务出问题了？先在队列里选中它，我帮你重试。',
+      acts: () => ['retry'] },
+
+    { k: ['队列', '任务', '进度', '在跑', '状态', '刷新'],
+      ans: fcQueueText,
+      acts: () => ['refresh', 'retry'] },
+
+    { k: ['输出', '产出', '包含什么', '报告里', '生成什么', '五块', '内容'],
+      ans: () => '一份报告包含五块：<b>业务梳理</b>、<b>需求疑点清单</b>、<b>MySQL DDL</b>、<b>REST 接口契约</b>、<b>研发任务清单</b>。只出评审产出，不生成业务功能代码。' },
+
+    { k: ['流程', '原理', '阶段', '流水线', '怎么实现', '怎么跑'],
+      ans: () => '流水线固定 4 阶段串行：<b>业务理解 → 风险扫描 → 结构生成 → 汇总格式化</b>。LLM 超时走指数退避重试 + Sentinel 熔断，单阶段失败标记 FAIL，可人工重试。' },
+
+    { k: ['导出', '下载', '导出md', '导出html', '导出docx', '导pdf', 'word', '生成文件'],
+      ans: () => state.selectedId ? '当前报告可以导出成 <b>MD / HTML / DOCX</b>，链接一次性临时有效。' : '先在左侧队列点一份已完成的报告，我才能帮你导出。',
+      acts: () => state.selectedId ? ['md', 'html', 'docx'] : ['refresh'] },
+
+    { k: ['设置', '配置', '接口地址', '服务地址', 'apibase', '接入地址'],
+      ans: () => '在「接入设置」里填 API Base（默认 http://localhost:8080），以及未登录时透传的租户 / 用户 / 角色，保存后我会重新拉一次状态。',
+      acts: () => ['settings'] },
+
+    { k: ['登录', '注册', '账号', '密码', '令牌', '身份'],
+      ans: () => '账号密码登录用 BCrypt 校验 + Redis 不透明令牌，令牌 12 小时滑动续期；连续 5 次密码错误锁定 15 分钟。',
+      acts: () => ['auth'] },
+
+    { k: ['额度', '会员', 'vip', '套餐', '兑换', '并发', '配额', '上限', '价格', '多少钱'],
+      ans: fcQuotaText,
+      acts: () => ['vip'] },
+
+    { k: ['rag', '向量', 'chroma', '检索', '召回', '知识库'],
+      ans: () => 'RAG 当前状态：<b>' + escapeHtml($('#ragText').textContent) + '</b>。每个任务独立 Chroma collection，租户 + 任务双重隔离；召回失败自动降级本地相似度。',
+      acts: () => ['rag'] },
+
+    { k: ['模型', 'deepseek', 'qwen', '分块', 'semantic', 'fixed', 'chunk'],
+      ans: () => '当前模型 <b>' + escapeHtml($('#cfgModel').value) + '</b>，分块策略 <b>' + escapeHtml($('#cfgChunk').value) + '</b>。semantic 按标点语义切，fixed 按固定长度切。' },
+
+    { k: ['技术栈', 'spring', 'mysql', 'redis', '架构', '后端', '依赖'],
+      ans: () => 'SpringBoot 3.2.5 + MyBatis-Plus + MySQL 8 + Redis/Redisson + Sentinel + Chroma + OkHttp4，导出用 POI / PDFBox，指标走 Micrometer + Prometheus。' },
+
+    { k: ['安全', '隐私', '隔离', '合规', '审计', '敏感词', '数据会不会'],
+      ans: () => '租户 ID 全链路贯穿，数据库 / Redis / Chroma 三层隔离；敏感词过滤、操作审计、滑动窗口限流、IP 黑名单；密钥只从环境变量注入。' },
+
+    { k: ['部署', '启动', 'docker', 'swagger', '健康', '接入服务'],
+      ans: () => '后端 <b>mvn package</b> 后 <b>java -jar</b> 启动；健康探针 /actuator/health，接口文档 /swagger-ui/index.html；前端零依赖，静态托管即用。' },
+
+    { k: ['追问', '继续问', '继续提问', '问答'],
+      ans: () => '选中报告后，底部输入框可以基于报告与原文继续追问（Ctrl + Enter），回答会追加到报告末尾。' },
+
+    { k: ['版本', 'diff', '对比', '差异', '待确认'],
+      ans: () => '同一文档多次解析会生成版本快照，可以做报告 diff；疑点会被结构化成待确认清单。' },
+
+    { k: ['关于我们', '你们', '团队', '公司', '谁做的', '开发者'],
+      ans: () => '我们是 Prd2Api 团队——把 PRD 变成可评审的接口契约、DDL 和研发任务，让需求评审少一点扯皮、多一点依据。' },
+
+    { k: ['拖动', '位置', '归位', '挡住', '角落', '消失'],
+      ans: () => '我可以拖到屏幕任意角落，双击回到右下角；点我一下开这个对话框，再点一下收起。',
+      acts: () => ['home'] },
+
+    { k: ['再见', '拜拜', '关闭', '收起', '没事了', '退出'],
+      ans: () => '好，有需要再点我，随时在岗 ♪',
+      run: () => setTimeout(fufuChatHide, 900) },
+
+    { k: ['谢谢', '感谢', 'thanks', 'thx'],
+      ans: () => '不客气，随时喊我 ♪' },
+
+    { k: ['清空', '重置', '重新开始'],
+      ans: () => '好，把对话清干净～',
+      run: () => { $('#fcBody').innerHTML = ''; } },
+
+    { k: ['可爱', '喜欢', '好看', '厉害', '漂亮'],
+      ans: () => '诶嘿，被你夸到了 ♪ 那要不要试试让我帮你上传一份 PRD？',
+      acts: () => ['upload'] }
+  ];
+
+  function fcRespond(raw) {
+    const q = String(raw || '').toLowerCase().replace(/\s+/g, '');
+    if (!q) return;
+    let best = null;
+    let score = 0;
+    FC_INTENTS.forEach((it) => {
+      let s = 0;
+      it.k.forEach((key) => { if (q.indexOf(key) >= 0) s += key.length; });
+      if (s > score) { score = s; best = it; }
+    });
+    if (!best) {
+      fcThink(() => fcSay('这个我还没学会… 你可以问我：平台能做什么 / 支持哪些格式 / 任务进度 / 额度怎么算。', ['upload', 'refresh', 'vip']));
+      return;
+    }
+    if (best.run) best.run();
+    const html = best.ans();
+    const acts = typeof best.acts === 'function' ? best.acts() : (best.acts || []);
+    fcThink(() => fcSay(html, acts));
+  }
+
+  function fcRunAct(id) {
+    const def = FC_ACTS[id];
+    if (!def) return;
+    fcAskUser(def.label);
+    try { def.run(); } catch (e) { /* 单个操作异常不打断对话 */ }
+    if (def.say) {
+      const text = typeof def.say === 'function' ? def.say() : def.say;
+      fcThink(() => fcSay(text));
+    }
+    fufuChatPosition();
+  }
+
+  function fufuChatShow() {
+    const panel = $('#fufuChat');
+    if (!panel || fufuChatOpen) return;
+    fufuChatOpen = true;
+    panel.classList.add('open');
+    panel.setAttribute('aria-hidden', 'false');
+    $('#fufuBubble').classList.remove('show');
+    fufuChatPosition();
+    if (!fufuChatGreeted) {
+      fufuChatGreeted = true;
+      fcSay(FC_WELCOME, ['upload', 'refresh', 'vip']);
+    }
+    setMood('happy');
+    if (innerWidth > 720) setTimeout(() => { const i = $('#fcInput'); if (i) i.focus({ preventScroll: true }); }, 220);
+  }
+
+  function fufuChatHide() {
+    const panel = $('#fufuChat');
+    if (!panel || !fufuChatOpen) return;
+    fufuChatOpen = false;
+    panel.classList.remove('open');
+    panel.setAttribute('aria-hidden', 'true');
+    const fufu = $('#fufu');
+    if (fufu) fufu.focus({ preventScroll: true });
+  }
+
+  function fufuChatToggle() {
+    if (fufuChatOpen) fufuChatHide(); else fufuChatShow();
+  }
+
+  function fcSubmit() {
+    const input = $('#fcInput');
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    fcAskUser(text);
+    fcRespond(text);
+  }
+
+  function bootFufuChat() {
+    const panel = $('#fufuChat');
+    if (!panel) return;
+
+    $('#fcClose').addEventListener('click', fufuChatHide);
+    $('#fcSend').addEventListener('click', fcSubmit);
+    $('#fcInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); fcSubmit(); }
+      if (e.key === 'Escape') fufuChatHide();
+    });
+
+    $('#fcTips').addEventListener('click', (e) => {
+      const tip = e.target.closest('.fc-tip');
+      if (!tip) return;
+      const text = tip.textContent.trim();
+      fcAskUser(text);
+      fcRespond(text);
+    });
+
+    $('#fcBody').addEventListener('click', (e) => {
+      const btn = e.target.closest('.fc-act');
+      if (!btn) return;
+      fcRunAct(btn.dataset.act);
+    });
+
+    // 点击面板与玩偶之外的区域自动收起
+    document.addEventListener('pointerdown', (e) => {
+      if (!fufuChatOpen) return;
+      if (e.target.closest('#fufuChat') || e.target.closest('#fufu')) return;
+      fufuChatHide();
+    }, true);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && fufuChatOpen) fufuChatHide();
+    });
   }
 
   function bootFufu() {
@@ -2108,14 +2703,6 @@
     try { saved = JSON.parse(localStorage.getItem(FUFU_POS_KEY) || 'null'); } catch (e) { /* 忽略脏数据 */ }
     placeFufu(saved && typeof saved.x === 'number' && typeof saved.y === 'number' ? saved : fufuHome());
 
-    const lines = [
-      '诶嘿，被你戳到了 ♪',
-      '要一起把需求唱成 API 吗？',
-      '今天的 PRD 也要漂漂亮亮的～',
-      '我可以拖到任意角落，不挡你看报告',
-      'ミク、standby！随时开工。'
-    ];
-    let idx = 0;
     let bubbleTimer = 0;
 
     const say = (text, mood) => {
@@ -2126,24 +2713,12 @@
       if (mood) setMood(mood);
     };
 
-    const poke = () => {
-      say(lines[idx++ % lines.length], 'happy');
-      el.classList.remove('sing');
-      void el.offsetWidth;
-      el.classList.add('sing');
-      clearTimeout(state.pokeTimer);
-      state.pokeTimer = setTimeout(() => {
-        const running = state.tasks.some(t => t.taskStatus === 'INIT' || t.taskStatus === 'PROCESS');
-        setSinging(running);
-      }, 2000);
-    };
-
     let drag = null;
     let moved = false;
 
     // 首次访问且从未拖动过时，提示一次可拖拽
     if (!saved) {
-      setTimeout(() => say('我可以拖到任意角落，不会挡住立绘 ♪'), 1600);
+      setTimeout(() => say('点我聊两句，也可以拖到任意角落 ♪'), 1600);
     }
 
     el.addEventListener('pointerdown', (ev) => {
@@ -2159,6 +2734,7 @@
       if (!moved && Math.abs(ev.clientX - drag.sx) + Math.abs(ev.clientY - drag.sy) < 5) return;
       if (!moved) { moved = true; el.classList.add('dragging'); }
       placeFufu({ x: ev.clientX - drag.dx, y: ev.clientY - drag.dy });
+      if (fufuChatOpen) fufuChatPosition();   // 拖动时对话框跟着走
     });
 
     const endDrag = (ev) => {
@@ -2168,9 +2744,9 @@
       el.classList.remove('dragging');
       if (moved) { saveFufuPos(); return; }
       const now = Date.now();
-      if (now - state.fufuPokeAt < 300) return;   // 双击的第二下不重复说话
+      if (now - state.fufuPokeAt < 300) return;   // 双击的第二下不再切换面板
       state.fufuPokeAt = now;
-      poke();
+      fufuChatToggle();
     };
 
     el.addEventListener('pointerup', endDrag);
@@ -2180,11 +2756,12 @@
     el.addEventListener('dblclick', () => {
       placeFufu(fufuHome());
       saveFufuPos();
+      if (fufuChatOpen) fufuChatPosition();
       say('回到原位啦 ♪');
     });
 
     el.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); poke(); }
+      if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fufuChatToggle(); }
     });
   }
 
@@ -2192,6 +2769,7 @@
     document.querySelectorAll('.btn').forEach(addRipple);
 
     bootFufu();
+    bootFufuChat();
 
     $('#settingsToggle').addEventListener('click', () => $('#settingsDrawer').classList.toggle('open'));
     $('#authToggle').addEventListener('click', () => $('#authDrawer').classList.toggle('open'));
@@ -2201,6 +2779,28 @@
     $('#btnRedeem').addEventListener('click', doRedeem);
     $('#authPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
     $('#redeemInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doRedeem(); });
+    $('#btnCouponRefresh').addEventListener('click', () => loadCoupons());
+    $('#couponList').addEventListener('click', (e) => {
+      const btn = e.target.closest('.js-claim');
+      if (btn) claimCoupon(btn.dataset.id);
+    });
+    $('#couponMine').addEventListener('click', (e) => {
+      const btn = e.target.closest('.js-use');
+      if (btn) useCoupon(btn.dataset.id);
+    });
+    $('#couponToggle').addEventListener('click', async () => {
+      const drawer = $('#adminDrawer');
+      drawer.classList.toggle('open');
+      if (drawer.classList.contains('open')) {
+        await loadPlans();
+        await loadAdminCoupons();
+      }
+    });
+    $('#btnCreateCoupon').addEventListener('click', createCoupon);
+    $('#adminCouponList').addEventListener('click', (e) => {
+      const btn = e.target.closest('.js-offline');
+      if (btn) offlineCoupon(btn.dataset.id);
+    });
     $('#cfgSave').addEventListener('click', () => {
       saveSettings();
       toast('接入配置已保存');
@@ -2279,7 +2879,10 @@
     window.addEventListener('resize', rafThrottle(resizeCanvas));
     window.addEventListener('resize', debounce(seedParticles, 200));
     // 窗口变化后把玩偶夹回可视区域，防止被推到屏幕外
-    window.addEventListener('resize', rafThrottle(() => placeFufu(state.fufuPos || fufuHome())));
+    window.addEventListener('resize', rafThrottle(() => {
+      placeFufu(state.fufuPos || fufuHome());
+      if (fufuChatOpen) fufuChatPosition();
+    }));
   }
 
   function boot() {
@@ -2292,6 +2895,7 @@
     loadQueue(true);
     refreshVip();
     loadMe();
+    loadCoupons();
     setTimeout(() => speak('把 PRD 丢进来吧，我帮你把需求唱成代码的结构 ♪'), 900);
 
     state.polling = setInterval(() => {

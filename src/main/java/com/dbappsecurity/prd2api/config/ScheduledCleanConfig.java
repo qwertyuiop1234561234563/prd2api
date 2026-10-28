@@ -1,5 +1,6 @@
 package com.dbappsecurity.prd2api.config;
 
+import com.dbappsecurity.prd2api.service.CouponService;
 import com.dbappsecurity.prd2api.service.FileService;
 import com.dbappsecurity.prd2api.service.VipService;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +18,7 @@ public class ScheduledCleanConfig {
 
     private final FileService fileService;
     private final VipService vipService;
+    private final CouponService couponService;
     private final Prd2ApiProperties properties;
 
     @Scheduled(cron = "${prd2api.clean.cron:0 30 3 * * ?}")
@@ -44,7 +46,7 @@ public class ScheduledCleanConfig {
     }
 
     /**
-     * 每日凌晨 4 点：清理已过期 VIP 标记与过期兑换码（请求时已按时间惰性判定，此处只做数据收敛）
+     * 每日凌晨 4 点：清理已过期 VIP 标记、过期兑换码与过期优惠券（请求时已按时间惰性判定，此处只做数据收敛）
      */
     @Scheduled(cron = "${prd2api.vip.expire-cron:0 0 4 * * ?}")
     public void expireVip() {
@@ -53,6 +55,12 @@ public class ScheduledCleanConfig {
             log.info("VIP 过期降级完成 users={}", users);
         } catch (Exception e) {
             log.error("VIP 过期降级失败", e);
+        }
+        try {
+            int coupons = couponService.expireOverdue();
+            log.info("优惠券过期收敛完成 count={}", coupons);
+        } catch (Exception e) {
+            log.error("优惠券过期收敛失败", e);
         }
     }
 }

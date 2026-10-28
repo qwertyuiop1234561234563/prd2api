@@ -24,4 +24,34 @@
         ORDER BY vip_expire_time
         LIMIT #{limit}
     </select>
+
+    <update id="increaseFailCount">
+        UPDATE sys_user
+        SET fail_count = fail_count + 1
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="lockUser">
+        UPDATE sys_user
+        SET fail_count = 0,
+            lock_until = #{lockUntil}
+        WHERE user_id = #{userId}
+    </update>
+
+    <update id="grantVip">
+        UPDATE sys_user
+        SET vip_plan_code = #{planCode},
+            vip_expire_time = DATE_ADD(
+                CASE
+                    WHEN vip_plan_code = #{planCode}
+                         AND vip_expire_time IS NOT NULL
+                         AND vip_expire_time &gt; NOW()
+                    THEN vip_expire_time
+                    ELSE NOW()
+                END,
+                INTERVAL #{days} DAY
+            )
+        WHERE user_id = #{userId}
+          AND deleted = 0
+    </update>
 </mapper>

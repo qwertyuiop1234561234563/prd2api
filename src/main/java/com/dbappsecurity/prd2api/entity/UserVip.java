@@ -16,6 +16,7 @@ public class UserVip {
 
     public static final String SOURCE_ADMIN = "ADMIN";
     public static final String SOURCE_REDEEM = "REDEEM";
+    public static final String SOURCE_COUPON = "COUPON";
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;

@@ -128,8 +128,19 @@ public class VipServiceImpl implements VipService {
         if (rows == 0) {
             throw new BizException(BizErrorCodeEnum.REDEEM_CODE_INVALID, "兑换码已被使用");
         }
-        applyVip(user, plan, UserVip.SOURCE_REDEEM, user.getUserId(), "兑换码 " + trimmed);
+        applyVip(user, plan, plan.getDurationDays(), UserVip.SOURCE_REDEEM, user.getUserId(), "兑换码 " + trimmed);
         log.info("兑换码兑换成功 userId={} plan={} code={}", user.getUserId(), plan.getPlanCode(), trimmed);
+        return myVip();
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public MyVipVO activateCouponVip(String planCode, int durationDays, String remark) {
+        SysUser user = requireCurrentUser();
+        VipPlan plan = requireGrantablePlan(planCode);
+        int days = durationDays > 0 ? durationDays : plan.getDurationDays();
+        applyVip(user, plan, days, UserVip.SOURCE_COUPON, user.getUserId(), remark);
+        log.info("优惠券开通 VIP userId={} plan={} days={}", user.getUserId(), plan.getPlanCode(), days);
         return myVip();
     }
 
@@ -165,7 +176,7 @@ public class VipServiceImpl implements VipService {
             throw new BizException(BizErrorCodeEnum.NOT_FOUND, "用户不存在");
         }
         VipPlan plan = requireGrantablePlan(dto.getPlanCode());
-        applyVip(user, plan, UserVip.SOURCE_ADMIN, TenantContextUtil.getUserKey(), dto.getRemark());
+        applyVip(user, plan, plan.getDurationDays(), UserVip.SOURCE_ADMIN, TenantContextUtil.getUserKey(), dto.getRemark());
         log.info("管理员开通 VIP userId={} plan={} operator={}",
                 user.getUserId(), plan.getPlanCode(), TenantContextUtil.getUserKey());
         return toUserVO(sysUserMapper.selectById(user.getUserId()), plan);
@@ -287,18 +298,16 @@ public class VipServiceImpl implements VipService {
     /**
      * 开通 VIP：同套餐续期从原到期时间累加，切套餐则从当前时间重新计算
      */
-    private void applyVip(SysUser user, VipPlan plan, String source, String operator, String remark) {
+    private void applyVip(SysUser user, VipPlan plan, int durationDays,
+                          String source, String operator, String remark) {
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime base = now;
-        if (plan.getPlanCode().equals(user.getVipPlanCode())
-                && user.getVipExpireTime() != null && user.getVipExpireTime().isAfter(now)) {
-            base = user.getVipExpireTime();
+        // 数据库原子续期：同套餐未到期时在原到期时间上累加，避免并发开通时「先读后写」丢失时长
+        int rows = sysUserMapper.grantVip(user.getUserId(), plan.getPlanCode(), durationDays);
+        if (rows == 0) {
+            throw new BizException(BizErrorCodeEnum.NOT_FOUND, "用户不存在或已注销");
         }
-        LocalDateTime expireTime = base.plusDays(plan.getDurationDays());
-        sysUserMapper.update(null, new LambdaUpdateWrapper<SysUser>()
-                .eq(SysUser::getUserId, user.getUserId())
-                .set(SysUser::getVipPlanCode, plan.getPlanCode())
-                .set(SysUser::getVipExpireTime, expireTime));
+        SysUser latest = sysUserMapper.selectById(user.getUserId());
+        LocalDateTime expireTime = latest == null ? now.plusDays(durationDays) : latest.getVipExpireTime();
 
         UserVip record = new UserVip();
         record.setUserId(user.getUserId());

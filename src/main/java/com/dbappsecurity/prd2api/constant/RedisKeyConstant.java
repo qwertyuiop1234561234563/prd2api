@@ -16,6 +16,8 @@ package com.dbappsecurity.prd2api.constant;
  * prd2api:export:token:{exportToken}      # 导出临时凭证
  * prd2api:auth:token:{token}              # 登录令牌 -> userId
  * prd2api:auth:user:tokens:{userId}       # 用户全部有效令牌集合，用于改密/封号时统一踢下线
+ * prd2api:coupon:{couponId}:stock         # 优惠券剩余库存（Lua 原子扣减）
+ * prd2api:coupon:{couponId}:user:{userId} # 用户已领取数量（Lua 原子累加）
  * </pre>
  */
 public final class RedisKeyConstant {
@@ -24,6 +26,7 @@ public final class RedisKeyConstant {
     }
 
     public static final String TASK_LOCK_PREFIX = "prd2api:task:lock:";
+    public static final String TASK_CREATE_LOCK_PREFIX = "prd2api:task:create:lock:";
     public static final String TASK_CONTEXT_PREFIX = "prd2api:task:context:";
     public static final String TASK_CANCEL_PREFIX = "prd2api:task:cancel:";
     public static final String RAG_EMBEDDING_PREFIX = "prd2api:rag:embedding:";
@@ -36,9 +39,15 @@ public final class RedisKeyConstant {
     public static final String EXPORT_TOKEN_PREFIX = "prd2api:export:token:";
     public static final String AUTH_TOKEN_PREFIX = "prd2api:auth:token:";
     public static final String AUTH_USER_TOKENS_PREFIX = "prd2api:auth:user:tokens:";
+    /** 优惠券 Key 前缀，使用 {couponId} 作为 hash tag，保证库存与个人计数落在同一 Redis Cluster 槽位 */
+    public static final String COUPON_PREFIX = "prd2api:coupon:";
 
     public static String taskLock(String taskId) {
         return TASK_LOCK_PREFIX + taskId;
+    }
+
+    public static String taskCreateLock(String tenantId) {
+        return TASK_CREATE_LOCK_PREFIX + tenantId;
     }
 
     public static String taskContext(String taskId) {
@@ -87,5 +96,13 @@ public final class RedisKeyConstant {
 
     public static String authUserTokens(String userId) {
         return AUTH_USER_TOKENS_PREFIX + userId;
+    }
+
+    public static String couponStock(Long couponId) {
+        return COUPON_PREFIX + "{" + couponId + "}:stock";
+    }
+
+    public static String couponUserCount(Long couponId, String userId) {
+        return COUPON_PREFIX + "{" + couponId + "}:user:" + userId;
     }
 }

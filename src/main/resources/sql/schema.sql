@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS `file_meta` (
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `deleted` TINYINT DEFAULT 0,
   PRIMARY KEY (`file_meta_id`),
-  KEY `idx_tenant_md5`(`tenant_id`,`file_md5`)
+  UNIQUE KEY `uk_tenant_md5`(`tenant_id`,`file_md5`),
+  KEY `idx_tenant_create`(`tenant_id`,`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '文件元信息表';
 
 CREATE TABLE IF NOT EXISTS `prd_task_cache` (
@@ -119,7 +120,7 @@ CREATE TABLE IF NOT EXISTS `user_vip` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'VIP 开通记录表';
 
 CREATE TABLE IF NOT EXISTS `redeem_code` (
-  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `id` BIGINT AUTO_INCREMENT COMMENT '主键',
   `code` VARCHAR(32) NOT NULL COMMENT '兑换码',
   `plan_code` VARCHAR(32) NOT NULL COMMENT '可兑换套餐编码',
   `status` VARCHAR(16) NOT NULL DEFAULT 'UNUSED' COMMENT 'UNUSED / USED / EXPIRED / VOID',
@@ -133,6 +134,43 @@ CREATE TABLE IF NOT EXISTS `redeem_code` (
   KEY `idx_batch`(`batch_no`),
   KEY `idx_status`(`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'VIP 兑换码表';
+
+CREATE TABLE IF NOT EXISTS `coupon` (
+  `coupon_id` BIGINT AUTO_INCREMENT COMMENT '优惠券ID',
+  `coupon_name` VARCHAR(64) NOT NULL COMMENT '优惠券名称',
+  `plan_code` VARCHAR(32) NOT NULL COMMENT '可开通套餐编码',
+  `duration_days` INT NOT NULL DEFAULT 0 COMMENT '开通天数，0 表示沿用套餐天数',
+  `total_stock` INT NOT NULL COMMENT '发放总量',
+  `per_user_limit` INT NOT NULL DEFAULT 1 COMMENT '每人限领数量',
+  `claimed_count` INT NOT NULL DEFAULT 0 COMMENT '已领取数量',
+  `valid_days` INT NOT NULL DEFAULT 0 COMMENT '领取后有效天数，0 表示跟随领取截止时间',
+  `start_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '领取开始时间',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '领取截止时间，空表示长期有效',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1 领取中 0 已下架',
+  `create_by` VARCHAR(64) DEFAULT NULL COMMENT '发放人',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`coupon_id`),
+  KEY `idx_status_time`(`status`,`expire_time`),
+  KEY `idx_plan_code`(`plan_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '优惠券发放批次表';
+
+CREATE TABLE IF NOT EXISTS `user_coupon` (
+  `id` BIGINT AUTO_INCREMENT COMMENT '主键',
+  `coupon_id` BIGINT NOT NULL COMMENT '优惠券ID',
+  `user_id` VARCHAR(64) NOT NULL COMMENT '领取人用户ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '所属租户ID',
+  `claim_no` INT NOT NULL DEFAULT 1 COMMENT '该用户第几次领取，用于组合唯一键',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'UNUSED' COMMENT 'UNUSED / USED / EXPIRED',
+  `receive_time` DATETIME NOT NULL COMMENT '领取时间',
+  `use_time` DATETIME DEFAULT NULL COMMENT '使用时间',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '使用截止时间，空表示长期有效',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_coupon_user_claim`(`coupon_id`,`user_id`,`claim_no`),
+  KEY `idx_user_status`(`user_id`,`status`),
+  KEY `idx_coupon_status`(`coupon_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '用户领取的优惠券表';
 
 CREATE TABLE IF NOT EXISTS `user_daily_usage` (
   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,

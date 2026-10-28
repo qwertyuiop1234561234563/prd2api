@@ -85,6 +85,11 @@ REQUIRE_LOGIN=false
 AUTH_TOKEN_TTL=43200
 # 允许自助注册的租户白名单，逗号分隔；其他租户账号只能由管理员创建
 SELF_REGISTER_TENANTS=default
+# 内置管理员初始化（首次启动创建账号 + 最高等级 VIP，已存在账号不覆盖密码）
+ADMIN_INIT_ENABLED=true
+ADMIN_INIT_USERNAME=admin
+ADMIN_INIT_PASSWORD=********
+ADMIN_INIT_VIP_DAYS=3650
 ```
 
 密钥一律通过环境变量注入，禁止提交到仓库。
@@ -127,7 +132,7 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 - 跨域来源由 `prd2api.security.allowed-origins` 控制，默认 `*` 仅供开发，生产务必配置具体域名
 - 下载导出文件使用一次性 `exportToken`，有效期默认 300 秒，不依赖上述身份
 
-首个管理员：可先用 Header 模式（`X-User-Role: ADMIN`）调用 `POST /api/admin/vip/user` 创建管理员账号，或直接把库中某账号 `role` 改为 `ADMIN`。
+首个管理员：启动时由 [AdminAccountInitializer.java](src/main/java/com/dbappsecurity/prd2api/config/AdminAccountInitializer.java) 自动创建，默认账号 `admin`（租户 `default`），初始密码取 `ADMIN_INIT_PASSWORD` 配置，并自动开通等级最高的 `PRO` 套餐；账号已存在时只补齐 ADMIN 角色与最高套餐，不覆盖已修改的密码。也可用 Header 模式（`X-User-Role: ADMIN`）调用 `POST /api/admin/vip/user` 创建其他管理员。
 
 ## VIP 体系
 
@@ -135,8 +140,10 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | --- | --- |
 | `sys_user` | 账号、BCrypt 密码、角色、账号状态、当前套餐与到期时间、失败次数与锁定时间 |
 | `vip_plan` | 套餐配置：额度、并发、单文件上限、模型档位、参考价格、上下架 |
-| `user_vip` | 开通流水：来源（ADMIN / REDEEM）、生效与到期时间、操作人 |
+| `user_vip` | 开通流水：来源（ADMIN / REDEEM / COUPON）、生效与到期时间、操作人 |
 | `redeem_code` | 兑换码：套餐、状态（UNUSED/USED/EXPIRED/VOID）、批次、使用人 |
+| `coupon` | 优惠券发放批次：总量、每人限领、已领数量、领取起止时间、领取后有效天数 |
+| `user_coupon` | 用户领取的券：唯一键 `(coupon_id, user_id, claim_no)`，状态 UNUSED/USED/EXPIRED |
 | `user_daily_usage` | VIP 用户按天的上传次数与 token 消耗，唯一键 `(user_id, stat_date)` |
 
 额度解析统一走 `QuotaResolver`：
@@ -146,6 +153,8 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 3. 单文件上限同样由额度决定：FREE 20MB，套餐按 `max_file_size_mb` 校验（Servlet 层放宽到 60MB，实际由业务层拦截）
 4. 兑换码使用 `UPDATE ... WHERE status='UNUSED'` 原子抢占，并发下不会重复兑换
 5. 同套餐再次开通/兑换按原到期时间累加，切换套餐从当前时间重新计算
+6. 优惠券领取走 Redis Lua 原子脚本（库存扣减 + 每人计数同一脚本内完成），数据库 `UPDATE ... WHERE claimed_count < total_stock` 与唯一键二次兜底，落库失败自动回滚 Redis 计数，任何情况下都不会超领
+7. 优惠券核销使用 `UPDATE ... WHERE status='UNUSED'` 原子抢占，成功后立即开通（或续期）对应套餐，并发重复使用只会有一次生效
 
 ## 接口清单
 
@@ -160,6 +169,10 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | GET | `/api/vip/my` | 我的 VIP：套餐、到期时间、剩余天数、今日用量 |
 | POST | `/api/vip/redeem` | 兑换码兑换（原子抢占，同套餐自动续期） |
 | GET | `/api/vip/quota` | 当前生效额度（VIP 套餐或租户配额） |
+| GET | `/api/coupon/available` | 可领取优惠券（含当前用户已领数量） |
+| POST | `/api/coupon/{couponId}/claim` | 领取优惠券（Lua 原子扣库存，防超领） |
+| GET | `/api/coupon/my` | 我的优惠券 |
+| POST | `/api/coupon/{userCouponId}/use` | 核销优惠券并开通 / 续期 VIP |
 | POST | `/api/file/upload` | 上传文件（multipart，字段 `file`） |
 | GET | `/api/file/page` | 文件分页（按租户 / 文件名） |
 | DELETE | `/api/file/{fileMetaId}` | 删除文件 |
@@ -191,6 +204,10 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | DELETE | `/api/admin/vip/plan/{planCode}` | 套餐下架（ADMIN，FREE 不可下架） |
 | POST | `/api/admin/vip/redeem-code/batch` | 批量生成兑换码，单次最多 500 个（ADMIN） |
 | GET | `/api/admin/vip/redeem-code/page` | 兑换码分页（ADMIN） |
+| POST | `/api/admin/coupon` | 发放限量优惠券（ADMIN） |
+| GET | `/api/admin/coupon/page` | 优惠券分页，按状态 / 套餐 / 名称过滤（ADMIN） |
+| DELETE | `/api/admin/coupon/{couponId}` | 优惠券下架，仅停止新领取（ADMIN） |
+| GET | `/api/admin/coupon/{couponId}/claims` | 某批优惠券的领取记录（ADMIN） |
 
 ## Redis Key 规范
 
@@ -208,12 +225,16 @@ prd2api:quota:daily:{tenantId}
 prd2api:export:token:{exportToken}
 prd2api:auth:token:{token}
 prd2api:auth:user:tokens:{userId}
+prd2api:coupon:{couponId}:stock
+prd2api:coupon:{couponId}:user:{userId}
 ```
+
+> 优惠券的两个 Key 用 `{couponId}` 作 hash tag，保证 Lua 脚本内多个 Key 落在同一 Redis Cluster 槽位；TTL 跟随领取截止时间，长期券不过期。
 
 ## 运维说明
 
 - 定时清理：每日 03:30 清理过期文件、过期报告缓存、超过 24 小时的导出临时文件（`prd2api.clean.cron` 可改）
-- VIP 降级：每日 04:00 清理已过期 VIP 标记与过期兑换码并写审计（`prd2api.vip.expire-cron` 可改）；请求时也会按到期时间惰性判定，不依赖定时任务
+- VIP 降级：每日 04:00 清理已过期 VIP 标记、过期兑换码与过期优惠券并写审计（`prd2api.vip.expire-cron` 可改）；请求时也会按到期时间惰性判定，不依赖定时任务
 - 配额优先级：VIP 生效（未过期且账号正常）用套餐额度与 `user_daily_usage` 计数，否则回退 `tenant_quota`
 - 配置热加载：`Prd2ApiProperties` 标注 `@RefreshScope`，接入 Nacos/Apollo 后无需改代码
 - 优雅停机：`server.shutdown=graceful`，线程池等待 30 秒

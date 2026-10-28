@@ -23,6 +23,10 @@ public enum BizErrorCodeEnum {
     ACCOUNT_LOCKED(423, "账号已被锁定"),
     REDEEM_CODE_INVALID(400, "兑换码无效"),
     VIP_PLAN_INVALID(400, "VIP 套餐无效"),
+    COUPON_INVALID(400, "优惠券无效"),
+    COUPON_SOLD_OUT(409, "优惠券已领完"),
+    COUPON_LIMIT_REACHED(409, "已达到每人限领数量"),
+    COUPON_ALREADY_USED(409, "优惠券已使用或已失效"),
     BIZ_ERROR(500, "业务处理失败"),
     SYSTEM_ERROR(500, "系统内部错误");
 

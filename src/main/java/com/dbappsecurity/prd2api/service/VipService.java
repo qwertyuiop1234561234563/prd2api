@@ -34,6 +34,15 @@ public interface VipService {
     MyVipVO redeem(String code);
 
     /**
+     * 使用优惠券开通 VIP（当前登录用户）
+     *
+     * @param planCode     套餐编码
+     * @param durationDays 自定义开通天数，0 表示沿用套餐天数
+     * @param remark       备注
+     */
+    MyVipVO activateCouponVip(String planCode, int durationDays, String remark);
+
+    /**
      * 用户分页（管理员）
      */
     Page<UserVO> pageUsers(UserQueryDTO dto);

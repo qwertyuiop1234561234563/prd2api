@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dbappsecurity.prd2api.mapper.UserCouponMapper">
+
+    <update id="markUsed">
+        UPDATE user_coupon
+        SET status = 'USED',
+            use_time = #{now}
+        WHERE id = #{id}
+          AND user_id = #{userId}
+          AND status = 'UNUSED'
+          AND (expire_time IS NULL OR expire_time &gt; #{now})
+    </update>
+
+    <update id="markExpired">
+        UPDATE user_coupon
+        SET status = 'EXPIRED'
+        WHERE status = 'UNUSED'
+          AND expire_time IS NOT NULL
+          AND expire_time &lt; #{now}
+    </update>
+
+    <select id="selectClaimPage" resultType="com.dbappsecurity.prd2api.vo.UserCouponVO">
+        SELECT uc.id,
+               uc.coupon_id,
+               c.coupon_name,
+               c.plan_code,
+               p.plan_name,
+               c.duration_days,
+               uc.user_id,
+               u.username,
+               u.display_name,
+               uc.claim_no,
+               uc.status,
+               uc.receive_time,
+               uc.use_time,
+               uc.expire_time
+        FROM user_coupon uc
+        LEFT JOIN coupon c ON c.coupon_id = uc.coupon_id
+        LEFT JOIN vip_plan p ON p.plan_code = c.plan_code
+        LEFT JOIN sys_user u ON u.user_id = uc.user_id
+        WHERE uc.coupon_id = #{couponId}
+        ORDER BY uc.id DESC
+    </select>
+</mapper>
