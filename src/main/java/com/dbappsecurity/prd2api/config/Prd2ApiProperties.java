@@ -30,6 +30,7 @@ public class Prd2ApiProperties {
     private Clean clean = new Clean();
     private Export export = new Export();
     private Async async = new Async();
+    private Auth auth = new Auth();
 
     @Data
     public static class Storage {
@@ -99,6 +100,8 @@ public class Prd2ApiProperties {
         private List<String> allowedOrigins = new ArrayList<>();
         /** 是否强制要求 X-Tenant-Id / X-User-Key，true 时缺失直接 401 */
         private boolean requireIdentity = false;
+        /** 是否强制要求登录态（Bearer Token），true 时不再接受 Header 身份透传 */
+        private boolean requireLogin = false;
     }
 
     @Data
@@ -126,5 +129,17 @@ public class Prd2ApiProperties {
         private int streamThreads = 4;
         /** 单实例 SSE 最大并发连接数，超出直接返回错误事件 */
         private int streamMaxConnections = 200;
+    }
+
+    @Data
+    public static class Auth {
+        /** 登录令牌有效期（秒），每次请求滑动续期 */
+        private long tokenTtlSeconds = 43200L;
+        /** 连续登录失败上限，达到后锁定账号 */
+        private int loginFailLimit = 5;
+        /** 账号锁定分钟数 */
+        private int lockMinutes = 15;
+        /** 允许自助注册的租户白名单，其他租户账号只能由管理员创建 */
+        private List<String> selfRegisterTenants = new ArrayList<>(List.of("default"));
     }
 }

@@ -11,7 +11,7 @@ import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import com.dbappsecurity.prd2api.constant.LlmModelEnum;
 import com.dbappsecurity.prd2api.constant.RedisKeyConstant;
 import com.dbappsecurity.prd2api.service.LlmInvokeService;
-import com.dbappsecurity.prd2api.service.TenantQuotaService;
+import com.dbappsecurity.prd2api.service.QuotaResolver;
 import com.dbappsecurity.prd2api.util.MetricUtil;
 import com.dbappsecurity.prd2api.util.RateLimitUtil;
 import com.dbappsecurity.prd2api.util.SensitiveFilterUtil;
@@ -44,7 +44,7 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
     private final Prd2ApiProperties properties;
-    private final TenantQuotaService tenantQuotaService;
+    private final QuotaResolver quotaResolver;
     private final MetricUtil metricUtil;
     private final RateLimitUtil rateLimitUtil;
     private final SensitiveFilterUtil sensitiveFilterUtil;
@@ -178,7 +178,7 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
             if (tokens > 0) {
                 String tenantId = TenantContextUtil.getTenantId();
                 if (StrUtil.isNotBlank(tenantId)) {
-                    tenantQuotaService.consumeTokens(tenantId, tokens);
+                    quotaResolver.consumeTokens(tokens);
                 }
             }
             log.info("LLM 调用完成 model={} tokens={} cost={}ms", modelName, tokens,

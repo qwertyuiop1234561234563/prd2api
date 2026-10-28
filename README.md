@@ -17,6 +17,7 @@ SpringBoot 3.2.5 | MyBatis-Plus 3.5.5 | MySQL 8 | Redis 6.2+ | Redisson | Sentin
 | --- | --- |
 | 文件接入 | md/txt/docx/pdf；后缀 + 魔数双校验；病毒扫描钩子；本地/OSS 双存储（OSS 为预留适配点）；元信息入库；md5 去重；相似度查重 |
 | 配额与租户 | 租户 ID 全链路贯穿；数据库/Redis/Chroma 全租户隔离；每日上传次数、token 上限、并发任务上限；超配额拦截告警；USER/ADMIN 角色 |
+| 登录与 VIP | 账号密码登录（BCrypt + Redis 不透明令牌，12h 滑动续期）；连续 5 次失败锁定 15 分钟；用户级 VIP 套餐（FREE/BASIC/PRO）；兑换码自助兑换；VIP 生效用用户额度，否则回退租户配额；每日定时降级 |
 | 文档预处理 | HTML/Markdown 清洗、乱码与空白收敛；固定长度 / 标点语义两种分块；分块缓存；超长上下文首尾压缩 |
 | RAG | 单任务独立 Chroma collection（租户 + 任务双重隔离）；Embedding 多模型切换；topK 可配；chunk md5 向量缓存；召回失败自动降级本地相似度 |
 | Agent 流水线 | 4 阶段串行：业务理解 → 风险扫描 → 结构生成 → 汇总格式化；LLM 超时/指数退避重试/Sentinel 熔断；单阶段失败任务标记 FAIL；支持人工重试与追加追问 |
@@ -29,10 +30,10 @@ SpringBoot 3.2.5 | MyBatis-Plus 3.5.5 | MySQL 8 | Redis 6.2+ | Redisson | Sentin
 
 ```
 com.dbappsecurity.prd2api
-├── controller      TaskController / FileController / RagController / AdminController
-├── service(.impl)  Task / File / Rag / Agent / LlmInvoke / TenantQuota / TaskStream / Stats / AuditLog
-├── mapper          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog（+ resources/mapper/*.xml）
-├── entity          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog
+├── controller      TaskController / FileController / RagController / AdminController / AuthController / VipController / AdminVipController
+├── service(.impl)  Task / File / Rag / Agent / LlmInvoke / TenantQuota / QuotaResolver / Auth / Vip / TaskStream / Stats / AuditLog
+├── mapper          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog / SysUser / VipPlan / UserVip / RedeemCode / UserDailyUsage（+ resources/mapper/*.xml）
+├── entity          PrdTask / PrdTaskCache / TenantQuota / FileMeta / AuditLog / SysUser / VipPlan / UserVip / RedeemCode / UserDailyUsage
 ├── dto / vo        请求参数与返回视图
 ├── annotation      @Audit 操作审计注解
 ├── aspect          AuditLogAspect 审计切面
@@ -54,9 +55,12 @@ com.dbappsecurity.prd2api
 ALTER TABLE prd_task ADD UNIQUE KEY uk_tenant_file_version (tenant_id, file_meta_id, version_no);
 ALTER TABLE prd_task_cache ADD UNIQUE KEY uk_cache_key (tenant_id, file_md5, model_code, chunk_strategy);
 ```
+
 2. Redis 6.2+
 3. Chroma 服务：`docker run -p 8000:8000 chromadb/chroma`（不可用时自动降级本地召回）
 4. OpenAI 兼容的 LLM / Embedding 接口
+
+登录与 VIP 相关的 `sys_user`、`vip_plan`、`user_vip`、`redeem_code`、`user_daily_usage` 均由脚本中 `CREATE TABLE IF NOT EXISTS` 与 `INSERT IGNORE` 幂等创建并写入 FREE/BASIC/PRO 三档种子套餐，重复执行安全。
 
 ### 2. 环境变量
 
@@ -75,6 +79,12 @@ CHROMA_URL=http://127.0.0.1:8000
 UPLOAD_PATH=./data/upload
 # 生产环境强制携带身份 Header（缺失返回 401）
 REQUIRE_IDENTITY=false
+# 生产环境强制只认登录令牌（开启后 Header 身份透传失效）
+REQUIRE_LOGIN=false
+# 登录令牌有效期（秒），默认 12 小时
+AUTH_TOKEN_TTL=43200
+# 允许自助注册的租户白名单，逗号分隔；其他租户账号只能由管理员创建
+SELF_REGISTER_TENANTS=default
 ```
 
 密钥一律通过环境变量注入，禁止提交到仓库。
@@ -91,26 +101,65 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 - 健康探针：`/actuator/health`（含 liveness/readiness）
 - Prometheus 指标：`/actuator/prometheus`
 
+### 4. 前端控制台
+
+[frontend/index.html](frontend/index.html) 是零依赖单页控制台，直接用浏览器打开或由任意静态服务器托管：
+
+- 右上「接入设置」配置服务地址与未登录时的 Header 透传身份
+- 右上「登录 / 注册」完成账号登录，令牌保存在 localStorage，刷新后自动恢复
+- 左侧「Membership」卡片展示当前额度来源、上传/token/并发用量与到期时间，可直接输入兑换码兑换
+
 ## 鉴权约定
 
-网关统一鉴权后向下游注入 Header（预留对接企业 SSO，只需替换 `AuthInterceptor` 的解析逻辑）：
+优先使用登录令牌（推荐），未携带令牌时回退网关 Header（便于内部脚本与运维调用）：
 
-| Header | 说明 |
+| 方式 | 说明 |
 | --- | --- |
+| `Authorization: Bearer <token>` | 登录接口签发，Redis 存储不透明令牌并滑动续期 12 小时；登出、改密、封号立即失效 |
 | `X-Tenant-Id` | 租户 ID，缺省 `default`；仅允许字母、数字、`_`、`-`，长度 1~64（参与存储路径拼接，非法值直接 400） |
 | `X-User-Key` | 用户标识，缺省 `anonymous`；仅允许字母、数字及 `_ . @ : -` |
 | `X-User-Role` | `USER` / `ADMIN`，仅 `ADMIN` 生效，其他值自动降级为 `USER`；`/api/admin/**` 强制 `ADMIN` |
 | `X-Trace-Id` | 可选，透传链路 ID，缺省自动生成 |
 
-`prd2api.security.require-identity=true`（生产 profile 默认开启）时缺失前两个 Header 直接 401。
-跨域来源由 `prd2api.security.allowed-origins` 控制，默认 `*` 仅供开发，生产务必配置具体域名。
+- `prd2api.security.require-login=true` 时只接受登录令牌，Header 透传返回 401（生产建议开启）
+- `prd2api.security.require-identity=true` 时缺失 `X-Tenant-Id` / `X-User-Key` 直接 401
+- 角色仅 ADMIN / USER 两级；管理员账号可通过 `POST /api/admin/vip/user` 创建
+- 跨域来源由 `prd2api.security.allowed-origins` 控制，默认 `*` 仅供开发，生产务必配置具体域名
+- 下载导出文件使用一次性 `exportToken`，有效期默认 300 秒，不依赖上述身份
 
-下载导出文件使用一次性 `exportToken`，有效期默认 300 秒，不依赖上述 Header。
+首个管理员：可先用 Header 模式（`X-User-Role: ADMIN`）调用 `POST /api/admin/vip/user` 创建管理员账号，或直接把库中某账号 `role` 改为 `ADMIN`。
+
+## VIP 体系
+
+| 表 | 作用 |
+| --- | --- |
+| `sys_user` | 账号、BCrypt 密码、角色、账号状态、当前套餐与到期时间、失败次数与锁定时间 |
+| `vip_plan` | 套餐配置：额度、并发、单文件上限、模型档位、参考价格、上下架 |
+| `user_vip` | 开通流水：来源（ADMIN / REDEEM）、生效与到期时间、操作人 |
+| `redeem_code` | 兑换码：套餐、状态（UNUSED/USED/EXPIRED/VOID）、批次、使用人 |
+| `user_daily_usage` | VIP 用户按天的上传次数与 token 消耗，唯一键 `(user_id, stat_date)` |
+
+额度解析统一走 `QuotaResolver`：
+
+1. 登录用户 VIP 生效（未过期、账号正常、套餐上架）→ 使用套餐额度，计数落 `user_daily_usage`（SQL 条件更新，防并发超卖）
+2. 未登录、未开通 VIP、已过期 → 回退所属租户 `tenant_quota`
+3. 单文件上限同样由额度决定：FREE 20MB，套餐按 `max_file_size_mb` 校验（Servlet 层放宽到 60MB，实际由业务层拦截）
+4. 兑换码使用 `UPDATE ... WHERE status='UNUSED'` 原子抢占，并发下不会重复兑换
+5. 同套餐再次开通/兑换按原到期时间累加，切换套餐从当前时间重新计算
 
 ## 接口清单
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| POST | `/api/auth/register` | 自助注册（固定 USER 角色，仅白名单租户），成功直接返回登录令牌 |
+| POST | `/api/auth/login` | 账号密码登录，返回 `token` 与用户信息 |
+| POST | `/api/auth/logout` | 登出当前令牌 |
+| GET | `/api/auth/me` | 当前登录用户信息与 VIP 状态 |
+| POST | `/api/auth/password` | 修改密码，成功后该用户全部令牌失效 |
+| GET | `/api/vip/plans` | 套餐列表（用户端，仅上架） |
+| GET | `/api/vip/my` | 我的 VIP：套餐、到期时间、剩余天数、今日用量 |
+| POST | `/api/vip/redeem` | 兑换码兑换（原子抢占，同套餐自动续期） |
+| GET | `/api/vip/quota` | 当前生效额度（VIP 套餐或租户配额） |
 | POST | `/api/file/upload` | 上传文件（multipart，字段 `file`） |
 | GET | `/api/file/page` | 文件分页（按租户 / 文件名） |
 | DELETE | `/api/file/{fileMetaId}` | 删除文件 |
@@ -134,6 +183,14 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | GET / POST | `/api/admin/quota/{tenantId}` / `/api/admin/quota` | 查询 / 配置租户配额（ADMIN） |
 | DELETE | `/api/admin/tenant/{tenantId}` | 清理租户任务、向量、文件（ADMIN） |
 | POST | `/api/admin/clean` | 手工触发过期数据清理（ADMIN） |
+| POST | `/api/admin/vip/user` | 创建用户（可指定 ADMIN，ADMIN） |
+| GET | `/api/admin/vip/user/page` | 用户分页，按租户/账号/套餐/VIP 状态过滤（ADMIN） |
+| POST | `/api/admin/vip/grant` | 手动开通 VIP，同套餐自动续期（ADMIN） |
+| GET | `/api/admin/vip/plan/all` | 全部套餐含下架（ADMIN） |
+| POST | `/api/admin/vip/plan` | 新增或更新套餐（ADMIN） |
+| DELETE | `/api/admin/vip/plan/{planCode}` | 套餐下架（ADMIN，FREE 不可下架） |
+| POST | `/api/admin/vip/redeem-code/batch` | 批量生成兑换码，单次最多 500 个（ADMIN） |
+| GET | `/api/admin/vip/redeem-code/page` | 兑换码分页（ADMIN） |
 
 ## Redis Key 规范
 
@@ -149,11 +206,15 @@ prd2api:limit:upload:{tenant}:{user}
 prd2api:limit:llm:{tenant}:{user}
 prd2api:quota:daily:{tenantId}
 prd2api:export:token:{exportToken}
+prd2api:auth:token:{token}
+prd2api:auth:user:tokens:{userId}
 ```
 
 ## 运维说明
 
 - 定时清理：每日 03:30 清理过期文件、过期报告缓存、超过 24 小时的导出临时文件（`prd2api.clean.cron` 可改）
+- VIP 降级：每日 04:00 清理已过期 VIP 标记与过期兑换码并写审计（`prd2api.vip.expire-cron` 可改）；请求时也会按到期时间惰性判定，不依赖定时任务
+- 配额优先级：VIP 生效（未过期且账号正常）用套餐额度与 `user_daily_usage` 计数，否则回退 `tenant_quota`
 - 配置热加载：`Prd2ApiProperties` 标注 `@RefreshScope`，接入 Nacos/Apollo 后无需改代码
 - 优雅停机：`server.shutdown=graceful`，线程池等待 30 秒
 - 指标：任务总数/成功/失败、LLM 调用耗时、token 消耗、RAG 召回耗时

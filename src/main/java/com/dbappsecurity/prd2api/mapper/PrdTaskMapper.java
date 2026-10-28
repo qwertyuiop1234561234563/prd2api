@@ -22,6 +22,11 @@ public interface PrdTaskMapper extends BaseMapper<PrdTask> {
     int countRunningByTenant(@Param("tenantId") String tenantId);
 
     /**
+     * 统计指定用户在租户下执行中的任务数（VIP 并发配额校验）
+     */
+    int countRunningByUser(@Param("tenantId") String tenantId, @Param("userKey") String userKey);
+
+    /**
      * 同一文件的历史最大版本号
      */
     Integer selectMaxVersionNo(@Param("tenantId") String tenantId, @Param("fileMetaId") String fileMetaId);

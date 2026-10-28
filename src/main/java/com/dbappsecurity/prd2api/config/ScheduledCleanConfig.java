@@ -1,13 +1,14 @@
 package com.dbappsecurity.prd2api.config;
 
 import com.dbappsecurity.prd2api.service.FileService;
+import com.dbappsecurity.prd2api.service.VipService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.Scheduled;
 
 /**
- * 定时清理：过期文件、过期报告缓存、过期导出临时文件
+ * 定时清理：过期文件、过期报告缓存、过期导出临时文件、VIP 过期降级
  */
 @Slf4j
 @Configuration
@@ -15,6 +16,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 public class ScheduledCleanConfig {
 
     private final FileService fileService;
+    private final VipService vipService;
     private final Prd2ApiProperties properties;
 
     @Scheduled(cron = "${prd2api.clean.cron:0 30 3 * * ?}")
@@ -39,5 +41,18 @@ public class ScheduledCleanConfig {
             log.error("清理过期导出文件失败", e);
         }
         log.info("定时清理结束");
+    }
+
+    /**
+     * 每日凌晨 4 点：清理已过期 VIP 标记与过期兑换码（请求时已按时间惰性判定，此处只做数据收敛）
+     */
+    @Scheduled(cron = "${prd2api.vip.expire-cron:0 0 4 * * ?}")
+    public void expireVip() {
+        try {
+            int users = vipService.expireOverdue();
+            log.info("VIP 过期降级完成 users={}", users);
+        } catch (Exception e) {
+            log.error("VIP 过期降级失败", e);
+        }
     }
 }

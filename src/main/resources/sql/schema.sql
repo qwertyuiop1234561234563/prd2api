@@ -66,6 +66,85 @@ CREATE TABLE IF NOT EXISTS `tenant_quota` (
   `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '租户配额表';
 
+CREATE TABLE IF NOT EXISTS `sys_user` (
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '所属租户ID',
+  `username` VARCHAR(64) NOT NULL COMMENT '登录账号，租户内唯一',
+  `password_hash` VARCHAR(128) NOT NULL COMMENT 'BCrypt 密码哈希',
+  `display_name` VARCHAR(64) DEFAULT NULL COMMENT '显示名',
+  `role` VARCHAR(16) NOT NULL DEFAULT 'USER' COMMENT 'ADMIN / USER',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE 正常 / DISABLED 禁用',
+  `vip_plan_code` VARCHAR(32) DEFAULT NULL COMMENT '当前生效套餐编码',
+  `vip_expire_time` DATETIME DEFAULT NULL COMMENT 'VIP 到期时间',
+  `last_login_time` DATETIME DEFAULT NULL COMMENT '最近登录时间',
+  `fail_count` INT NOT NULL DEFAULT 0 COMMENT '连续登录失败次数',
+  `lock_until` DATETIME DEFAULT NULL COMMENT '登录锁定截止时间',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `deleted` TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除 0未删1已删',
+  PRIMARY KEY (`user_id`),
+  UNIQUE KEY `uk_tenant_username`(`tenant_id`,`username`),
+  KEY `idx_vip_expire`(`vip_expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '系统用户表';
+
+CREATE TABLE IF NOT EXISTS `vip_plan` (
+  `plan_code` VARCHAR(32) NOT NULL COMMENT '套餐编码',
+  `plan_name` VARCHAR(64) NOT NULL COMMENT '套餐名称',
+  `level` INT NOT NULL DEFAULT 0 COMMENT '套餐等级 0免费 1基础 2专业',
+  `duration_days` INT NOT NULL DEFAULT 30 COMMENT '单次开通有效天数，0 表示不可开通',
+  `daily_upload_limit` INT NOT NULL DEFAULT 50 COMMENT '每日上传次数上限',
+  `daily_token_limit` BIGINT NOT NULL DEFAULT 1000000 COMMENT '每日 token 上限',
+  `concurrent_task_limit` INT NOT NULL DEFAULT 5 COMMENT '最大并发任务数',
+  `max_file_size_mb` INT NOT NULL DEFAULT 20 COMMENT '单文件大小上限 MB',
+  `model_tier` VARCHAR(16) NOT NULL DEFAULT 'basic' COMMENT '可用模型档位 basic/standard/pro',
+  `price_cent` INT NOT NULL DEFAULT 0 COMMENT '参考价格，单位分',
+  `description` VARCHAR(256) DEFAULT NULL COMMENT '套餐说明',
+  `status` TINYINT NOT NULL DEFAULT 1 COMMENT '1 上架 0 下架',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`plan_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'VIP 套餐表';
+
+CREATE TABLE IF NOT EXISTS `user_vip` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `plan_code` VARCHAR(32) NOT NULL COMMENT '套餐编码',
+  `source` VARCHAR(16) NOT NULL COMMENT '开通来源 ADMIN 管理员开通 / REDEEM 兑换码',
+  `start_time` DATETIME NOT NULL COMMENT '生效时间',
+  `expire_time` DATETIME NOT NULL COMMENT '到期时间',
+  `operator` VARCHAR(64) DEFAULT NULL COMMENT '操作人',
+  `remark` VARCHAR(256) DEFAULT NULL COMMENT '备注',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  KEY `idx_user_time`(`user_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'VIP 开通记录表';
+
+CREATE TABLE IF NOT EXISTS `redeem_code` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `code` VARCHAR(32) NOT NULL COMMENT '兑换码',
+  `plan_code` VARCHAR(32) NOT NULL COMMENT '可兑换套餐编码',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'UNUSED' COMMENT 'UNUSED / USED / EXPIRED / VOID',
+  `batch_no` VARCHAR(32) DEFAULT NULL COMMENT '生成批次号',
+  `used_by_user` VARCHAR(64) DEFAULT NULL COMMENT '使用人用户ID',
+  `used_time` DATETIME DEFAULT NULL COMMENT '使用时间',
+  `expire_time` DATETIME DEFAULT NULL COMMENT '兑换码自身过期时间，空表示长期有效',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_code`(`code`),
+  KEY `idx_batch`(`batch_no`),
+  KEY `idx_status`(`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'VIP 兑换码表';
+
+CREATE TABLE IF NOT EXISTS `user_daily_usage` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `stat_date` DATE NOT NULL COMMENT '统计日期',
+  `upload_count` INT NOT NULL DEFAULT 0 COMMENT '当日上传次数',
+  `token_count` BIGINT NOT NULL DEFAULT 0 COMMENT '当日 token 消耗',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_user_date`(`user_id`,`stat_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '用户每日用量表（VIP 额度）';
+
 CREATE TABLE IF NOT EXISTS `audit_log` (
   `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
   `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
@@ -84,3 +163,12 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
   KEY `idx_tenant_time`(`tenant_id`,`create_time`),
   KEY `idx_action`(`action`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '操作审计日志表';
+
+-- VIP 套餐种子数据：FREE 仅用于展示，不可开通（duration_days = 0）
+INSERT IGNORE INTO `vip_plan`
+(`plan_code`, `plan_name`, `level`, `duration_days`, `daily_upload_limit`, `daily_token_limit`,
+ `concurrent_task_limit`, `max_file_size_mb`, `model_tier`, `price_cent`, `description`, `status`)
+VALUES
+('FREE', '免费版', 0, 0, 20, 300000, 2, 10, 'basic', 0, '未开通 VIP 时按所属租户配额使用', 1),
+('BASIC', '基础版', 1, 30, 100, 2000000, 5, 20, 'standard', 1900, '适合个人与小团队的日常评审', 1),
+('PRO', '专业版', 2, 30, 500, 10000000, 20, 50, 'pro', 9900, '适合高频评审与多项目并行', 1);

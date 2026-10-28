@@ -10,6 +10,15 @@
           AND task_status IN ('INIT', 'PROCESS')
     </select>
 
+    <select id="countRunningByUser" resultType="int">
+        SELECT COUNT(1)
+        FROM prd_task
+        WHERE tenant_id = #{tenantId}
+          AND user_key = #{userKey}
+          AND deleted = 0
+          AND task_status IN ('INIT', 'PROCESS')
+    </select>
+
     <select id="selectMaxVersionNo" resultType="java.lang.Integer">
         SELECT MAX(version_no)
         FROM prd_task

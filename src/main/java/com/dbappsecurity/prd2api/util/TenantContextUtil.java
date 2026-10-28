@@ -8,7 +8,8 @@ import lombok.Data;
 /**
  * 租户 + 用户上下文（ThreadLocal）
  * <p>
- * HTTP 请求由 AuthInterceptor 写入；异步任务由 AgentServiceImpl 在任务线程内重新写入，结束后清理。
+ * HTTP 请求由 AuthInterceptor 写入（登录态优先，其次 Header 透传）；
+ * 异步任务由 AgentServiceImpl 在任务线程内重新写入，结束后清理。
  */
 public final class TenantContextUtil {
 
@@ -21,11 +22,28 @@ public final class TenantContextUtil {
     }
 
     public static void set(String tenantId, String userKey, String role) {
-        HOLDER.set(new UserContext(tenantId, userKey, role));
+        HOLDER.set(new UserContext(null, tenantId, userKey, role));
+    }
+
+    public static void set(String userId, String tenantId, String userKey, String role) {
+        HOLDER.set(new UserContext(userId, tenantId, userKey, role));
     }
 
     public static void clear() {
         HOLDER.remove();
+    }
+
+    public static String getUserId() {
+        UserContext context = HOLDER.get();
+        return context == null ? null : context.getUserId();
+    }
+
+    public static String requireUserId() {
+        String userId = getUserId();
+        if (StrUtil.isBlank(userId)) {
+            throw new BizException(BizErrorCodeEnum.UNAUTHORIZED, "当前请求未绑定登录用户，请先登录");
+        }
+        return userId;
     }
 
     public static String getTenantId() {
@@ -65,11 +83,13 @@ public final class TenantContextUtil {
 
     @Data
     public static class UserContext {
+        private String userId;
         private String tenantId;
         private String userKey;
         private String role;
 
-        public UserContext(String tenantId, String userKey, String role) {
+        public UserContext(String userId, String tenantId, String userKey, String role) {
+            this.userId = userId;
             this.tenantId = tenantId;
             this.userKey = userKey;
             this.role = role;

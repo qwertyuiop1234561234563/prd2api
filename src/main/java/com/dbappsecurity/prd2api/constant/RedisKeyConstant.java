@@ -14,6 +14,8 @@ package com.dbappsecurity.prd2api.constant;
  * prd2api:limit:llm:{tenant}:{user}       # LLM 调用限流（滑动窗口）
  * prd2api:quota:daily:{tenantId}          # 租户配额计数器
  * prd2api:export:token:{exportToken}      # 导出临时凭证
+ * prd2api:auth:token:{token}              # 登录令牌 -> userId
+ * prd2api:auth:user:tokens:{userId}       # 用户全部有效令牌集合，用于改密/封号时统一踢下线
  * </pre>
  */
 public final class RedisKeyConstant {
@@ -32,6 +34,8 @@ public final class RedisKeyConstant {
     public static final String LIMIT_LLM_PREFIX = "prd2api:limit:llm:";
     public static final String QUOTA_DAILY_PREFIX = "prd2api:quota:daily:";
     public static final String EXPORT_TOKEN_PREFIX = "prd2api:export:token:";
+    public static final String AUTH_TOKEN_PREFIX = "prd2api:auth:token:";
+    public static final String AUTH_USER_TOKENS_PREFIX = "prd2api:auth:user:tokens:";
 
     public static String taskLock(String taskId) {
         return TASK_LOCK_PREFIX + taskId;
@@ -75,5 +79,13 @@ public final class RedisKeyConstant {
 
     public static String exportToken(String token) {
         return EXPORT_TOKEN_PREFIX + token;
+    }
+
+    public static String authToken(String token) {
+        return AUTH_TOKEN_PREFIX + token;
+    }
+
+    public static String authUserTokens(String userId) {
+        return AUTH_USER_TOKENS_PREFIX + userId;
     }
 }

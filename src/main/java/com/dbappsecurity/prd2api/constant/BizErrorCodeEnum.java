@@ -20,6 +20,9 @@ public enum BizErrorCodeEnum {
     RATE_LIMITED(429, "请求过于频繁，请稍后重试"),
     EXPORT_TOKEN_INVALID(403, "导出凭证无效或已过期"),
     MODEL_NOT_SUPPORTED(400, "不支持的模型编码"),
+    ACCOUNT_LOCKED(423, "账号已被锁定"),
+    REDEEM_CODE_INVALID(400, "兑换码无效"),
+    VIP_PLAN_INVALID(400, "VIP 套餐无效"),
     BIZ_ERROR(500, "业务处理失败"),
     SYSTEM_ERROR(500, "系统内部错误");
 

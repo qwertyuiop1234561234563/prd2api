@@ -20,8 +20,9 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
-                // 下载接口使用一次性临时凭证鉴权，不依赖 Header
-                .excludePathPatterns("/api/task/export/download");
+                // 登录/注册无需携带身份；下载接口使用一次性临时凭证鉴权
+                .excludePathPatterns("/api/auth/login", "/api/auth/register",
+                        "/api/task/export/download");
     }
 
     @Override

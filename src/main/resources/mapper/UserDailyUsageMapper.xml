@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dbappsecurity.prd2api.mapper.UserDailyUsageMapper">
+
+    <insert id="ensureRow">
+        INSERT IGNORE INTO user_daily_usage (user_id, stat_date, upload_count, token_count)
+        VALUES (#{userId}, #{statDate}, 0, 0)
+    </insert>
+
+    <update id="increaseUploadUsed">
+        UPDATE user_daily_usage
+        SET upload_count = upload_count + 1
+        WHERE user_id = #{userId}
+          AND stat_date = #{statDate}
+          AND upload_count &lt; #{limit}
+    </update>
+
+    <update id="increaseTokenUsed">
+        UPDATE user_daily_usage
+        SET token_count = token_count + #{tokens}
+        WHERE user_id = #{userId}
+          AND stat_date = #{statDate}
+          AND token_count + #{tokens} &lt;= #{limit}
+    </update>
+</mapper>

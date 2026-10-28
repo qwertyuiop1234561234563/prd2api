@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dbappsecurity.prd2api.mapper.SysUserMapper">
+
+    <select id="selectByTenantAndUsername" resultType="com.dbappsecurity.prd2api.entity.SysUser">
+        SELECT user_id, tenant_id, username, password_hash, display_name, role, status,
+               vip_plan_code, vip_expire_time, last_login_time, fail_count, lock_until,
+               create_time, update_time, deleted
+        FROM sys_user
+        WHERE tenant_id = #{tenantId}
+          AND username = #{username}
+          AND deleted = 0
+        LIMIT 1
+    </select>
+
+    <select id="selectExpiredVip" resultType="com.dbappsecurity.prd2api.entity.SysUser">
+        SELECT user_id, tenant_id, username, display_name, role, status,
+               vip_plan_code, vip_expire_time, create_time, update_time, deleted
+        FROM sys_user
+        WHERE deleted = 0
+          AND vip_plan_code IS NOT NULL
+          AND vip_expire_time IS NOT NULL
+          AND vip_expire_time &lt; #{now}
+        ORDER BY vip_expire_time
+        LIMIT #{limit}
+    </select>
+</mapper>

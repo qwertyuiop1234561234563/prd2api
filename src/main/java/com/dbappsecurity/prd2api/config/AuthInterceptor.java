@@ -3,6 +3,8 @@ package com.dbappsecurity.prd2api.config;
 import cn.hutool.core.util.StrUtil;
 import com.dbappsecurity.prd2api.common.RespModel;
 import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
+import com.dbappsecurity.prd2api.entity.SysUser;
+import com.dbappsecurity.prd2api.service.AuthService;
 import com.dbappsecurity.prd2api.util.TenantContextUtil;
 import com.dbappsecurity.prd2api.util.TraceIdUtil;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,8 +21,9 @@ import java.util.regex.Pattern;
 /**
  * 鉴权拦截器
  * <p>
- * 当前实现：从网关注入的 Header 解析租户/用户/角色（X-Tenant-Id / X-User-Key / X-User-Role），
- * 预留对接企业 SSO：后续只需在此处替换为 token 解析即可，业务代码零改动。
+ * 优先解析 Authorization: Bearer 登录令牌；未携带令牌时回退到网关注入的 Header
+ * （X-Tenant-Id / X-User-Key / X-User-Role），便于内部脚本与运维调用。
+ * 开启 prd2api.security.require-login 后仅接受登录态。
  */
 @Component
 @RequiredArgsConstructor
@@ -29,7 +32,9 @@ public class AuthInterceptor implements HandlerInterceptor {
     public static final String HEADER_TENANT = "X-Tenant-Id";
     public static final String HEADER_USER = "X-User-Key";
     public static final String HEADER_ROLE = "X-User-Role";
+    public static final String HEADER_AUTH = "Authorization";
 
+    private static final String BEARER_PREFIX = "Bearer ";
     private static final String DEFAULT_TENANT = "default";
     private static final String DEFAULT_USER = "anonymous";
 
@@ -39,6 +44,7 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private final ObjectMapper objectMapper;
     private final Prd2ApiProperties properties;
+    private final AuthService authService;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -51,6 +57,37 @@ public class AuthInterceptor implements HandlerInterceptor {
         String traceId = TraceIdUtil.setTraceId(request.getHeader(TraceIdUtil.TRACE_HEADER));
         response.setHeader(TraceIdUtil.TRACE_HEADER, traceId);
 
+        String token = resolveToken(request);
+        if (StrUtil.isNotBlank(token)) {
+            SysUser user = authService.resolveToken(token);
+            if (user == null) {
+                writeJson(response, RespModel.fail(BizErrorCodeEnum.UNAUTHORIZED, "登录状态已失效，请重新登录"));
+                return false;
+            }
+            TenantContextUtil.set(user.getUserId(), user.getTenantId(), user.getUsername(),
+                    normalizeRole(user.getRole()));
+        } else {
+            if (properties.getSecurity().isRequireLogin()) {
+                writeJson(response, RespModel.fail(BizErrorCodeEnum.UNAUTHORIZED, "该接口需要登录后访问"));
+                return false;
+            }
+            if (!bindHeaderIdentity(request, response)) {
+                return false;
+            }
+        }
+
+        if (request.getRequestURI().startsWith("/api/admin") && !TenantContextUtil.isAdmin()) {
+            writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN,
+                    "管理端接口需要 ADMIN 角色"));
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Header 身份透传模式：校验租户/用户字符集，避免路径穿越与非法标识
+     */
+    private boolean bindHeaderIdentity(HttpServletRequest request, HttpServletResponse response) throws Exception {
         String rawTenant = request.getHeader(HEADER_TENANT);
         String rawUser = request.getHeader(HEADER_USER);
         if (properties.getSecurity().isRequireIdentity() && (StrUtil.isBlank(rawTenant) || StrUtil.isBlank(rawUser))) {
@@ -72,13 +109,15 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         String role = normalizeRole(request.getHeader(HEADER_ROLE));
         TenantContextUtil.set(tenantId, userKey, role);
-
-        if (request.getRequestURI().startsWith("/api/admin") && !TenantContextUtil.isAdmin()) {
-            writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN,
-                    "管理端接口需要 X-User-Role: ADMIN"));
-            return false;
-        }
         return true;
+    }
+
+    private String resolveToken(HttpServletRequest request) {
+        String header = request.getHeader(HEADER_AUTH);
+        if (StrUtil.isBlank(header) || !header.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        return StrUtil.trim(header.substring(BEARER_PREFIX.length()));
     }
 
     /**

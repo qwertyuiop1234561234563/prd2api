@@ -18,8 +18,8 @@ import com.dbappsecurity.prd2api.mapper.FileMetaMapper;
 import com.dbappsecurity.prd2api.mapper.PrdTaskCacheMapper;
 import com.dbappsecurity.prd2api.mapper.PrdTaskMapper;
 import com.dbappsecurity.prd2api.service.FileService;
+import com.dbappsecurity.prd2api.service.QuotaResolver;
 import com.dbappsecurity.prd2api.service.RagService;
-import com.dbappsecurity.prd2api.service.TenantQuotaService;
 import com.dbappsecurity.prd2api.util.DocParseUtil;
 import com.dbappsecurity.prd2api.util.FileUtil;
 import com.dbappsecurity.prd2api.util.RateLimitUtil;
@@ -58,7 +58,7 @@ public class FileServiceImpl implements FileService {
     private final FileMetaMapper fileMetaMapper;
     private final PrdTaskMapper prdTaskMapper;
     private final PrdTaskCacheMapper prdTaskCacheMapper;
-    private final TenantQuotaService tenantQuotaService;
+    private final QuotaResolver quotaResolver;
     private final RagService ragService;
     private final RateLimitUtil rateLimitUtil;
     private final Prd2ApiProperties properties;
@@ -77,8 +77,10 @@ public class FileServiceImpl implements FileService {
             if (file == null || file.isEmpty()) {
                 throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "上传文件不能为空");
             }
-            if (file.getSize() > FileUtil.MAX_FILE_SIZE) {
-                throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "文件超过 20MB 限制");
+            // 单文件上限由当前生效额度决定：VIP 用套餐配置，否则用默认 20MB
+            int maxFileSizeMb = quotaResolver.maxFileSizeMb();
+            if (file.getSize() > maxFileSizeMb * 1024L * 1024L) {
+                throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "文件超过 " + maxFileSizeMb + "MB 限制");
             }
             String fileName = FileUtil.sanitizeFileName(file.getOriginalFilename());
             String suffix = FileUtil.checkSuffix(fileName);
@@ -106,7 +108,7 @@ public class FileServiceImpl implements FileService {
                 throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文档解析内容为空，请检查文件是否可读");
             }
             // 解析成功后再占用上传配额，避免不可读文件白白消耗次数
-            tenantQuotaService.checkUploadQuota(tenantId);
+            quotaResolver.checkUploadQuota();
             cacheText(md5, text);
             SimilarResult similar = findSimilarDocument(tenantId, text, md5);
 

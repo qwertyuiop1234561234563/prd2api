@@ -12,8 +12,9 @@ spring:
     active: dev
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      # 放宽到 60MB，实际单文件上限由套餐额度在业务层校验
+      max-file-size: 60MB
+      max-request-size: 60MB
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${DB_HOST:127.0.0.1}:${DB_PORT:3306}/${DB_NAME:prd2api}?useUnicode=true&characterEncoding=utf8mb4&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -93,6 +94,8 @@ prd2api:
   security:
     # 是否强制要求 X-Tenant-Id / X-User-Key（生产建议 true）
     require-identity: ${REQUIRE_IDENTITY:false}
+    # 是否强制要求登录态（Bearer Token），生产建议 true；开启后不再接受 Header 身份透传
+    require-login: ${REQUIRE_LOGIN:false}
     # 允许的跨域来源，留空表示 *，生产建议填写具体域名
     allowed-origins: []
     # IP 黑名单，命中直接拒绝
@@ -116,6 +119,17 @@ prd2api:
     llm-queue: 100
     stream-threads: 4
     stream-max-connections: 200
+  auth:
+    # 登录令牌有效期（秒），每次请求滑动续期
+    token-ttl-seconds: ${AUTH_TOKEN_TTL:43200}
+    # 连续登录失败上限与锁定时长
+    login-fail-limit: 5
+    lock-minutes: 15
+    # 允许自助注册的租户白名单，其他租户账号只能由管理员创建
+    self-register-tenants: ${SELF_REGISTER_TENANTS:default}
+  vip:
+    # VIP 到期降级与过期兑换码清理，每日 4 点执行
+    expire-cron: "0 0 4 * * ?"
 
 springdoc:
   api-docs:

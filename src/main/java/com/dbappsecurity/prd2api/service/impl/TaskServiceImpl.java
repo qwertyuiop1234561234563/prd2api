@@ -29,7 +29,7 @@ import com.dbappsecurity.prd2api.service.AgentService;
 import com.dbappsecurity.prd2api.service.FileService;
 import com.dbappsecurity.prd2api.service.RagService;
 import com.dbappsecurity.prd2api.service.TaskService;
-import com.dbappsecurity.prd2api.service.TenantQuotaService;
+import com.dbappsecurity.prd2api.service.QuotaResolver;
 import com.dbappsecurity.prd2api.util.DiffUtil;
 import com.dbappsecurity.prd2api.util.ExportUtil;
 import com.dbappsecurity.prd2api.util.MetricUtil;
@@ -74,7 +74,7 @@ public class TaskServiceImpl implements TaskService {
     private final FileMetaMapper fileMetaMapper;
     private final FileService fileService;
     private final AgentService agentService;
-    private final TenantQuotaService tenantQuotaService;
+    private final QuotaResolver quotaResolver;
     private final RagService ragService;
     private final Prd2ApiProperties properties;
     private final StringRedisTemplate stringRedisTemplate;
@@ -100,7 +100,7 @@ public class TaskServiceImpl implements TaskService {
 
             // 缓存未命中才占用并发配额，命中缓存直接返回历史结果
             if (cache == null) {
-                tenantQuotaService.checkConcurrentQuota(tenantId);
+                quotaResolver.checkConcurrentQuota();
             }
 
             PrdTask task = new PrdTask();
