@@ -76,10 +76,12 @@ prd2api:
     collection-prefix: prd2api
     top-k: 4
   llm:
-    base-url: ${LLM_BASE_URL:https://api.deepseek.com/v1}
+    base-url: ${LLM_BASE_URL:https://open.bigmodel.cn/api/paas/v4}
     api-key: ${LLM_API_KEY:}
-    model-name: deepseek-chat
-    embedding-model: deepseek-embedding
+    model-name: ${LLM_MODEL_NAME:glm-5.3-flash}
+    embedding-model: ${LLM_EMBEDDING_MODEL:embedding-3}
+    # 允许模型发起工具调用；若所选模型不支持可设为 false
+    tool-calling: ${LLM_TOOL_CALLING:true}
     connect-timeout: 30000
     read-timeout: 60000
     max-retry: 2
@@ -149,6 +151,29 @@ prd2api:
     # 会话保留天数与清理时间
     session-expire-days: ${ASSISTANT_SESSION_EXPIRE_DAYS:30}
     clean-cron: "0 0 5 * * ?"
+  # 桌面助手 Agent：ReAct 循环 + 工具调用 + 长期记忆 + 知识库
+  agent:
+    enabled: ${AGENT_ENABLED:true}
+    # 单轮最多工具调用步数，防止模型无限调用
+    max-steps: ${AGENT_MAX_STEPS:6}
+    # 注入系统提示词的长期记忆条数
+    memory-inject-limit: 5
+    # 知识库召回条数
+    knowledge-top-k: 3
+    # 是否落库工具调用轨迹
+    trace-persist: true
+    # 同一轮多个工具并行执行（含单工具超时保护）
+    parallel-tools: ${AGENT_PARALLEL_TOOLS:true}
+    # 单个工具执行超时（毫秒），超时直接返回失败，不拖垮整轮对话
+    tool-timeout-ms: ${AGENT_TOOL_TIMEOUT_MS:8000}
+    # 只读工具失败重试次数（写/危险工具不重试，避免重复副作用）
+    tool-retry: ${AGENT_TOOL_RETRY:1}
+    # 危险操作确认票据有效期（秒）
+    confirm-ttl-seconds: ${AGENT_CONFIRM_TTL:300}
+    # 提示词注入检测：命中后本轮写操作一律人工确认
+    injection-guard: ${AGENT_INJECTION_GUARD:true}
+    # 工具执行线程池核心线程数
+    tool-core: 4
   # 内置管理员：首次启动自动创建账号并开通最高等级 VIP；已存在账号不会覆盖密码
   admin-init:
     enabled: ${ADMIN_INIT_ENABLED:true}

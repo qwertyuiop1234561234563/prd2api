@@ -19,6 +19,7 @@ public class AsyncThreadPoolConfig {
 
     public static final String FILE_EXECUTOR = "fileExecutor";
     public static final String LLM_EXECUTOR = "llmExecutor";
+    public static final String TOOL_EXECUTOR = "toolExecutor";
 
     @Bean(FILE_EXECUTOR)
     public ThreadPoolTaskExecutor fileExecutor(Prd2ApiProperties properties) {
@@ -34,6 +35,15 @@ public class AsyncThreadPoolConfig {
         // LLM 流水线动辄数分钟，绝不能回落到 Web 请求线程执行，队列满直接拒绝并由调用方标记任务失败
         return buildExecutor("llm-call-", async.getLlmCore(), async.getLlmMax(), async.getLlmQueue(),
                 new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    @Bean(TOOL_EXECUTOR)
+    public ThreadPoolTaskExecutor toolExecutor(Prd2ApiProperties properties) {
+        Prd2ApiProperties.Agent agent = properties.getAgent();
+        int core = Math.max(2, agent.getToolCore());
+        // 工具多为 DB 查询，允许少量堆积；队列满时由调用线程兜底，避免直接丢掉工具结果
+        return buildExecutor("agent-tool-", core, core * 2, Math.max(64, core * 16),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     private ThreadPoolTaskExecutor buildExecutor(String prefix, int core, int max, int queue,

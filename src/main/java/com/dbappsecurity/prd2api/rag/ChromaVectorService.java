@@ -100,6 +100,23 @@ public class ChromaVectorService {
     }
 
     /**
+     * 获取或创建指定名称的 collection（知识库等全局集合，不按任务缓存）
+     */
+    public CollectionRef ensureNamedCollection(String name) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("name", name);
+        body.put("get_or_create", true);
+        body.putObject("metadata").put("hnsw:space", "cosine");
+
+        JsonNode response = postJson(baseUrl() + "/api/v1/collections" + tenantQuery(), body);
+        String collectionId = response.path("id").asText();
+        if (StrUtil.isBlank(collectionId)) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "Chroma 创建 collection 失败: " + response);
+        }
+        return new CollectionRef(collectionId, name);
+    }
+
+    /**
      * 读取缓存的 collection 引用，缓存丢失或格式异常返回 null
      */
     public CollectionRef cachedCollection(String taskId) {

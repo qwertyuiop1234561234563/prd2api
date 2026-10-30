@@ -29,10 +29,15 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * LLM 调用实现：超时控制、指数退避重试、Sentinel 熔断、token 统计与配额扣减
+ * <p>
+ * 同时支持普通对话与 OpenAI 兼容的 function calling，默认对接智谱 GLM-4-Flash（免费），
+ * 通过 LLM_BASE_URL / LLM_API_KEY / LLM_MODEL_NAME 可切换到任意兼容网关。
  */
 @Slf4j
 @Service
@@ -51,31 +56,93 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
 
     @Override
     public String chat(String systemPrompt, String userPrompt, String modelCode) {
+        String modelName = prepare(modelCode);
+        String prompt = maskUserPrompt(userPrompt);
+
+        ObjectNode body = baseBody(modelName);
+        ArrayNode messages = body.putArray("messages");
+        messages.addObject().put("role", "system").put("content", systemPrompt);
+        messages.addObject().put("role", "user").put("content", prompt);
+
+        MessageResult result = invoke(body, modelName);
+        if (StrUtil.isBlank(result.content())) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "LLM 返回内容为空");
+        }
+        return result.content().trim();
+    }
+
+    @Override
+    public ToolChatResult chatWithTools(List<Map<String, Object>> messages, String toolsJson, String modelCode) {
+        String modelName = prepare(modelCode);
+        ObjectNode body = baseBody(modelName);
+        body.set("messages", objectMapper.valueToTree(messages));
+        if (StrUtil.isNotBlank(toolsJson)) {
+            try {
+                body.set("tools", objectMapper.readTree(toolsJson));
+                body.put("tool_choice", "auto");
+            } catch (Exception e) {
+                throw new BizException(BizErrorCodeEnum.SYSTEM_ERROR, "工具定义序列化失败", e);
+            }
+        }
+        MessageResult result = invoke(body, modelName);
+        return new ToolChatResult(result.content(), result.toolCalls(), result.tokens());
+    }
+
+    @Override
+    public boolean available() {
+        return StrUtil.isNotBlank(properties.getLlm().getApiKey());
+    }
+
+    @Override
+    public boolean toolCallingAvailable() {
+        return available() && properties.getLlm().isToolCalling();
+    }
+
+    /**
+     * 统一前置校验：密钥、模型解析、限流
+     */
+    private String prepare(String modelCode) {
         Prd2ApiProperties.Llm llm = properties.getLlm();
         if (StrUtil.isBlank(llm.getApiKey())) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
                     "未配置 LLM_API_KEY（环境变量注入），无法执行智能解析");
         }
         String modelName = LlmModelEnum.resolve(modelCode).modelNameOrDefault(llm.getModelName());
-
         String tenantId = TenantContextUtil.getTenantId();
         if (StrUtil.isNotBlank(tenantId)) {
             rateLimitUtil.check(RedisKeyConstant.limitLlm(tenantId, TenantContextUtil.getUserKey()),
                     properties.getLimit().getLlmPerMinute());
         }
+        return modelName;
+    }
 
+    private String maskUserPrompt(String userPrompt) {
         List<String> hits = sensitiveFilterUtil.find(userPrompt);
         if (!hits.isEmpty()) {
-            log.warn("LLM 入参命中敏感词 {}，已做掩码处理 tenantId={}", hits, tenantId);
-            userPrompt = sensitiveFilterUtil.mask(userPrompt);
+            log.warn("LLM 入参命中敏感词 {}，已做掩码处理 tenantId={}", hits, TenantContextUtil.getTenantId());
+            return sensitiveFilterUtil.mask(userPrompt);
         }
+        return userPrompt;
+    }
 
+    private ObjectNode baseBody(String modelName) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("model", modelName);
+        body.put("temperature", properties.getLlm().getTemperature());
+        body.put("stream", false);
+        return body;
+    }
+
+    /**
+     * Sentinel 熔断 + 重试
+     */
+    private MessageResult invoke(ObjectNode body, String modelName) {
         Entry entry = null;
         try {
             entry = SphU.entry(SentinelConfig.RES_LLM);
-            return invokeWithRetry(systemPrompt, userPrompt, modelName);
+            return invokeWithRetry(body, modelName);
         } catch (BlockException e) {
-            log.warn("LLM 调用被 Sentinel 限流 tenantId={}", tenantId);
+            log.warn("LLM 调用被 Sentinel 限流 tenantId={}", TenantContextUtil.getTenantId());
             throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "LLM 调用并发过高，请稍后重试");
         } finally {
             if (entry != null) {
@@ -84,18 +151,13 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
         }
     }
 
-    @Override
-    public boolean available() {
-        return StrUtil.isNotBlank(properties.getLlm().getApiKey());
-    }
-
-    private String invokeWithRetry(String systemPrompt, String userPrompt, String modelName) {
+    private MessageResult invokeWithRetry(ObjectNode body, String modelName) {
         int maxRetry = Math.max(0, properties.getLlm().getMaxRetry());
         long backoff = properties.getLlm().getRetryBackoffMs();
         RetryableLlmException lastError = null;
         for (int attempt = 0; attempt <= maxRetry; attempt++) {
             try {
-                return callOnce(systemPrompt, userPrompt, modelName);
+                return callOnce(body, modelName);
             } catch (RetryableLlmException e) {
                 // 网络抖动、超时、429、5xx 才重试
                 lastError = e;
@@ -124,16 +186,8 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
         }
     }
 
-    private String callOnce(String systemPrompt, String userPrompt, String modelName) {
+    private MessageResult callOnce(ObjectNode body, String modelName) {
         Prd2ApiProperties.Llm llm = properties.getLlm();
-        ObjectNode body = objectMapper.createObjectNode();
-        body.put("model", modelName);
-        body.put("temperature", llm.getTemperature());
-        body.put("stream", false);
-        ArrayNode messages = body.putArray("messages");
-        messages.addObject().put("role", "system").put("content", systemPrompt);
-        messages.addObject().put("role", "user").put("content", userPrompt);
-
         String payload;
         try {
             payload = objectMapper.writeValueAsString(body);
@@ -169,10 +223,10 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
         }
         try {
             JsonNode root = objectMapper.readTree(responseBody);
-            String content = root.path("choices").path(0).path("message").path("content").asText();
-            if (StrUtil.isBlank(content)) {
-                throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "LLM 返回内容为空");
-            }
+            JsonNode message = root.path("choices").path(0).path("message");
+            String content = message.path("content").asText("");
+            List<ToolCall> toolCalls = parseToolCalls(message);
+
             long tokens = root.path("usage").path("total_tokens").asLong(0L);
             metricUtil.addTokens(tokens);
             if (tokens > 0) {
@@ -181,14 +235,33 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
                     quotaResolver.consumeTokens(tokens);
                 }
             }
-            log.info("LLM 调用完成 model={} tokens={} cost={}ms", modelName, tokens,
-                    System.currentTimeMillis() - start);
-            return content.trim();
+            log.info("LLM 调用完成 model={} tokens={} toolCalls={} cost={}ms",
+                    modelName, tokens, toolCalls.size(), System.currentTimeMillis() - start);
+            return new MessageResult(content, toolCalls, tokens);
         } catch (BizException e) {
             throw e;
         } catch (Exception e) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "LLM 响应解析失败: " + e.getMessage(), e);
         }
+    }
+
+    private List<ToolCall> parseToolCalls(JsonNode message) {
+        List<ToolCall> calls = new ArrayList<>();
+        JsonNode toolCalls = message.path("tool_calls");
+        if (!toolCalls.isArray()) {
+            return calls;
+        }
+        for (JsonNode call : toolCalls) {
+            JsonNode function = call.path("function");
+            String name = function.path("name").asText("");
+            if (StrUtil.isBlank(name)) {
+                continue;
+            }
+            calls.add(new ToolCall(call.path("id").asText(""),
+                    name,
+                    StrUtil.blankToDefault(function.path("arguments").asText(""), "{}")));
+        }
+        return calls;
     }
 
     private void sleep(long millis) {
@@ -197,5 +270,11 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /**
+     * 统一解析结果：文本、工具调用、token
+     */
+    private record MessageResult(String content, List<ToolCall> toolCalls, long tokens) {
     }
 }

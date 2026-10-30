@@ -33,6 +33,7 @@ public class Prd2ApiProperties {
     private Auth auth = new Auth();
     private AdminInit adminInit = new AdminInit();
     private Assistant assistant = new Assistant();
+    private Agent agent = new Agent();
 
     @Data
     public static class Storage {
@@ -69,10 +70,13 @@ public class Prd2ApiProperties {
 
     @Data
     public static class Llm {
-        private String baseUrl = "https://api.deepseek.com/v1";
+        /** 默认指向智谱 GLM-5.3-Flash（新用户免费资源包），可换任意 OpenAI 兼容网关 */
+        private String baseUrl = "https://open.bigmodel.cn/api/paas/v4";
         private String apiKey = "";
-        private String modelName = "deepseek-chat";
-        private String embeddingModel = "deepseek-embedding";
+        private String modelName = "glm-5.3-flash";
+        private String embeddingModel = "embedding-3";
+        /** 是否允许模型发起工具调用（function calling） */
+        private boolean toolCalling = true;
         private int connectTimeout = 30000;
         private int readTimeout = 60000;
         private int maxRetry = 2;
@@ -181,5 +185,56 @@ public class Prd2ApiProperties {
         private int sessionExpireDays = 30;
         /** 会话清理 cron */
         private String cleanCron = "0 0 5 * * ?";
+    }
+
+    /**
+     * 桌面助手 Agent：工具调用、长期记忆、知识库
+     */
+    @Data
+    public static class Agent {
+        /** 是否启用 Agent 循环；关闭后退化为规则问答 */
+        private boolean enabled = true;
+        /** 单轮对话最多工具调用步数，防止无限循环 */
+        private int maxSteps = 6;
+        /** 注入系统提示词的长期记忆条数 */
+        private int memoryInjectLimit = 5;
+        /** 单用户长期记忆最多保留条数 */
+        private int memoryMaxFacts = 200;
+        /** 知识库召回条数 */
+        private int knowledgeTopK = 3;
+        /** 是否落库 Agent 轨迹（工具调用审计） */
+        private boolean tracePersist = true;
+        /** 是否并行执行同一轮的多个工具调用 */
+        private boolean parallelTools = true;
+        /** 单个工具执行超时（毫秒） */
+        private long toolTimeoutMs = 8000L;
+        /** 工具失败重试次数（写操作靠幂等键保证不重复执行） */
+        private int toolRetry = 1;
+        /** 危险操作确认票据有效期（秒） */
+        private int confirmTtlSeconds = 300;
+        /** 是否开启提示词注入检测（命中后写操作强制人工确认） */
+        private boolean injectionGuard = true;
+        /** 工具执行线程池核心线程数 */
+        private int toolCore = 4;
+        /** 单轮上下文 token 预算，超出后对早期对话做摘要压缩 */
+        private int contextTokenBudget = 6000;
+        /** 压缩时完整保留的最近消息条数 */
+        private int contextKeepRecent = 4;
+        /** 是否启用早期对话摘要压缩；关闭后仅做超预算截断 */
+        private boolean contextSummary = true;
+        /** 历史摘要最大字数 */
+        private int contextSummaryMaxChars = 800;
+        /** 是否开启回答接地自检（数值出处与知识来源） */
+        private boolean selfCheck = true;
+        /** 自检未通过时是否让模型基于证据重写一次 */
+        private boolean selfCheckRetry = true;
+        /** 是否开启语义缓存（仅缓存无个人数据、无动作的知识型问答） */
+        private boolean semanticCache = true;
+        /** 语义缓存命中阈值（余弦相似度） */
+        private double semanticCacheThreshold = 0.93D;
+        /** 语义缓存条目有效期（秒） */
+        private int semanticCacheTtlSeconds = 1800;
+        /** 单用户语义缓存最多保留条数 */
+        private int semanticCacheMaxEntries = 100;
     }
 }

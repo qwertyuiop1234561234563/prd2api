@@ -70,4 +70,75 @@ public class MetricUtil {
                 .register(registry)
                 .record(millis, TimeUnit.MILLISECONDS);
     }
+
+    /**
+     * Agent 工具调用：按工具、风险等级与成败打点，并记录耗时
+     */
+    public void agentTool(String tool, String risk, boolean success, long millis) {
+        Counter.builder("prd2api_agent_tool_total")
+                .description("Agent 工具调用次数")
+                .tag("tool", tool)
+                .tag("risk", risk)
+                .tag("status", success ? "success" : "fail")
+                .register(registry)
+                .increment();
+        if (millis > 0) {
+            Timer.builder("prd2api_agent_tool_latency")
+                    .description("Agent 工具执行耗时")
+                    .tag("tool", tool)
+                    .publishPercentiles(0.5, 0.95)
+                    .register(registry)
+                    .record(millis, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * 危险操作人工确认（生成票据与确认执行都计数）
+     */
+    public void agentConfirm(String stage, boolean success) {
+        Counter.builder("prd2api_agent_confirm_total")
+                .description("Agent 危险操作确认次数")
+                .tag("stage", stage)
+                .tag("status", success ? "success" : "fail")
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * 语义缓存命中/未命中
+     */
+    public void agentCache(boolean hit) {
+        Counter.builder("prd2api_agent_semantic_cache_total")
+                .description("语义缓存命中次数")
+                .tag("result", hit ? "hit" : "miss")
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * 上下文压缩节省的 token 数
+     */
+    public void agentContextCompressed(int savedTokens) {
+        Counter.builder("prd2api_agent_context_compress_total")
+                .description("上下文压缩次数")
+                .register(registry)
+                .increment();
+        if (savedTokens > 0) {
+            Counter.builder("prd2api_agent_context_saved_tokens_total")
+                    .description("上下文压缩节省 token 总量")
+                    .register(registry)
+                    .increment(savedTokens);
+        }
+    }
+
+    /**
+     * 回答接地自检结果
+     */
+    public void agentSelfCheck(boolean grounded) {
+        Counter.builder("prd2api_agent_self_check_total")
+                .description("回答接地自检次数")
+                .tag("result", grounded ? "grounded" : "ungrounded")
+                .register(registry)
+                .increment();
+    }
 }

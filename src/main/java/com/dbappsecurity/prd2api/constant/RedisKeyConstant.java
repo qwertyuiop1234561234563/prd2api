@@ -47,6 +47,18 @@ public final class RedisKeyConstant {
     public static final String LIMIT_ASSISTANT_PREFIX = "prd2api:limit:assistant:";
     /** 助手会话过期清理分布式锁 */
     public static final String ASSISTANT_CLEAN_LOCK = "prd2api:assistant:clean:lock";
+    /** 助手知识库是否已完成向量化索引 */
+    public static final String ASSISTANT_KB_INDEXED = "prd2api:assistant:kb:indexed";
+    /** 危险工具人工确认票据（按租户+用户隔离） */
+    public static final String ASSISTANT_CONFIRM_PREFIX = "prd2api:assistant:confirm:";
+    /** 工具幂等键，防止重试或重复调用造成重复副作用 */
+    public static final String ASSISTANT_TOOL_IDEM_PREFIX = "prd2api:assistant:tool:idem:";
+    /** 评测任务互斥锁，防止并发刷 token */
+    public static final String ASSISTANT_EVAL_LOCK = "prd2api:assistant:eval:lock";
+    /** 会话历史摘要缓存，避免每轮重复压缩早期对话 */
+    public static final String ASSISTANT_CTX_SUMMARY_PREFIX = "prd2api:assistant:ctx:summary:";
+    /** 语义缓存（按租户+用户隔离，只缓存知识型问答） */
+    public static final String ASSISTANT_SEMCACHE_PREFIX = "prd2api:assistant:semcache:";
 
     public static String taskLock(String taskId) {
         return TASK_LOCK_PREFIX + taskId;

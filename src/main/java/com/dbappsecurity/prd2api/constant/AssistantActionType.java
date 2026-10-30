@@ -24,6 +24,8 @@ public final class AssistantActionType {
     public static final String ADMIN_STATS = "ADMIN_STATS";
     /** 页面跳转 */
     public static final String NAVIGATE = "NAVIGATE";
+    /** 危险操作待人工确认 */
+    public static final String CONFIRM = "CONFIRM";
 
     private AssistantActionType() {
     }

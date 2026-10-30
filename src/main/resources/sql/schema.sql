@@ -239,3 +239,38 @@ CREATE TABLE IF NOT EXISTS `assistant_chat_message` (
   KEY `idx_session`(`session_id`,`id`),
   KEY `idx_tenant_user`(`tenant_id`,`user_id`,`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手消息表';
+
+-- 桌面助手长期记忆：按用户沉淀称呼、偏好等稳定事实
+CREATE TABLE IF NOT EXISTS `assistant_user_memory` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `memory_key` VARCHAR(64) NOT NULL COMMENT '记忆键，同一用户下唯一',
+  `memory_value` VARCHAR(512) NOT NULL COMMENT '记忆内容',
+  `source` VARCHAR(16) NOT NULL DEFAULT 'AGENT' COMMENT 'AGENT / RULE / USER',
+  `hit_count` INT NOT NULL DEFAULT 0 COMMENT '召回次数',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY `uk_tenant_user_key`(`tenant_id`,`user_id`,`memory_key`),
+  KEY `idx_tenant_user_update`(`tenant_id`,`user_id`,`update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手长期记忆表';
+
+-- 桌面助手 Agent 轨迹：工具调用参数、结果、耗时与成败
+CREATE TABLE IF NOT EXISTS `assistant_agent_trace` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `trace_id` VARCHAR(64) NOT NULL COMMENT '一次提问的链路ID',
+  `session_id` VARCHAR(64) NOT NULL COMMENT '会话ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `user_id` VARCHAR(64) NOT NULL COMMENT '用户ID',
+  `step_no` INT NOT NULL DEFAULT 1 COMMENT '步骤序号',
+  `step_type` VARCHAR(16) NOT NULL COMMENT 'TOOL / KNOWLEDGE / MEMORY / THINK',
+  `tool_name` VARCHAR(64) DEFAULT NULL COMMENT '工具名',
+  `tool_args` VARCHAR(512) DEFAULT NULL COMMENT '工具入参，截断存储',
+  `tool_result` TEXT DEFAULT NULL COMMENT '工具结果，截断存储',
+  `success` TINYINT NOT NULL DEFAULT 1 COMMENT '是否成功',
+  `latency_ms` BIGINT DEFAULT 0 COMMENT '耗时毫秒',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  KEY `idx_session_id`(`session_id`,`id`),
+  KEY `idx_trace_id`(`trace_id`),
+  KEY `idx_tenant_create`(`tenant_id`,`user_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手 Agent 轨迹表';

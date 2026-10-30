@@ -34,8 +34,29 @@ public class AssistantReplyVO {
     @Schema(description = "推荐追问")
     private List<String> suggestions;
 
-    @Schema(description = "是否使用了内置知识库兜底（未配置或调用大模型失败）")
+    @Schema(description = "是否使用了规则或内置知识库兜底（未使用大模型工具循环）")
     private boolean degraded;
+
+    @Schema(description = "执行模式：AGENT（模型工具循环）/ RULE（规则通道）/ FAQ（知识库兜底）")
+    private String mode;
+
+    @Schema(description = "本轮消耗 token")
+    private long tokenUsed;
+
+    @Schema(description = "Agent 轨迹：工具调用、知识检索、记忆写入、上下文压缩与接地自检")
+    private List<AgentStepVO> steps;
+
+    @Schema(description = "是否命中语义缓存（命中时本轮不调用大模型）")
+    private boolean cacheHit;
+
+    @Schema(description = "语义缓存与当前问题的余弦相似度，未命中为 0")
+    private double cacheScore;
+
+    @Schema(description = "答复是否通过接地自检；未做自检时默认为 true")
+    private boolean grounded;
+
+    @Schema(description = "接地自检未通过的说明，通过时为 null")
+    private String groundingNote;
 
     @Schema(description = "回复时间")
     private LocalDateTime time;
