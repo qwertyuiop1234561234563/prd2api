@@ -794,8 +794,9 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
         step.setTime(LocalDateTime.now());
         steps.add(step);
         emitStep(listener, emitted, step);
-        String reply = "「" + title + "」还差 " + String.join("、", labels)
-                + " 才能执行。你补充一下我再继续；不想麻烦的话，也可以直接说页面名称或从列表里选。";
+        String hint = missing.contains("taskId")
+                ? "也可以先让我列出最近的任务，你从中挑一个。" : "补充后我立刻继续。";
+        String reply = "「" + title + "」还差 " + String.join("、", labels) + " 才能执行。" + hint;
         return new AgentOutcome(reply, "AGENT", false, steps, AssistantActionType.NONE, null,
                 null, null, tokens, List.of());
     }
