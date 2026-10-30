@@ -1245,7 +1245,9 @@
     if (!steps || !steps.length) return '';
     const labels = {
       TOOL: '工具', KNOWLEDGE: '知识库', MEMORY: '记忆', THINK: '推理',
-      CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存'
+      CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存',
+      ROUTE: '工具检索', SUBAGENT: '子 Agent', BUDGET: '预算熔断',
+      LOOP: '死循环拦截', CLARIFY: '参数追问'
     };
     const items = steps.map((s) => {
       const kind = labels[s.type] || s.type || '步骤';
@@ -1645,7 +1647,9 @@
     const bad = step.success === false;
     const kind = {
       TOOL: '工具', KNOWLEDGE: '知识库', MEMORY: '记忆', CONFIRM: '待确认', GUARD: '安全检查',
-      CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存'
+      CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存',
+      ROUTE: '工具检索', SUBAGENT: '子 Agent', BUDGET: '预算熔断',
+      LOOP: '死循环拦截', CLARIFY: '参数追问'
     }[step.type] || '步骤';
     const line = (bad ? '✕ ' : '✓ ') + (step.title || step.toolName || kind) +
       '（' + kind + (Number(step.latencyMs) ? ' · ' + step.latencyMs + 'ms' : '') + '）';

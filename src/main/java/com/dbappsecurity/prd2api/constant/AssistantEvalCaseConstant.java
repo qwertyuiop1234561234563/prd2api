@@ -33,7 +33,11 @@ public final class AssistantEvalCaseConstant {
                     List.of("那我的额度还剩多少？"), true),
             // 接地：工具型答复必须通过自检（数值有出处、无未执行的写操作声明）
             new EvalCase("grounding", "接地自检", "我的额度还剩多少？",
-                    List.of("query_my_quota"), List.of(), null, List.of(), true));
+                    List.of("query_my_quota"), List.of(), null, List.of(), true),
+            // 子 Agent 委派：复合任务应交给专家，而不是父 Agent 挨个调工具
+            new EvalCase("delegate", "子 Agent 委派",
+                    "请委派数据分析师，帮我查一下我的任务和今日额度，然后汇总成一段结论给我",
+                    List.of("delegate_task"), List.of(), null));
 
     private AssistantEvalCaseConstant() {
     }

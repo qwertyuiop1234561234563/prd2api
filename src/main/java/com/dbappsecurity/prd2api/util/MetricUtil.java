@@ -1,6 +1,7 @@
 package com.dbappsecurity.prd2api.util;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
@@ -138,6 +139,50 @@ public class MetricUtil {
         Counter.builder("prd2api_agent_self_check_total")
                 .description("回答接地自检次数")
                 .tag("result", grounded ? "grounded" : "ungrounded")
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * 工具动态检索：是否裁剪、候选数与注入数，用于评估 prompt 成本
+     */
+    public void agentToolRoute(boolean filtered, int candidates, int selected) {
+        Counter.builder("prd2api_agent_tool_route_total")
+                .description("工具动态检索次数")
+                .tag("filtered", filtered ? "true" : "false")
+                .register(registry)
+                .increment();
+        DistributionSummary.builder("prd2api_agent_tool_route_candidates")
+                .description("候选工具数")
+                .tag("filtered", filtered ? "true" : "false")
+                .register(registry)
+                .record(candidates);
+        DistributionSummary.builder("prd2api_agent_tool_route_selected")
+                .description("注入工具数")
+                .tag("filtered", filtered ? "true" : "false")
+                .register(registry)
+                .record(selected);
+    }
+
+    /**
+     * 预算/死循环熔断次数
+     */
+    public void agentBudgetStop(String reason) {
+        Counter.builder("prd2api_agent_budget_stop_total")
+                .description("Agent 预算或死循环熔断次数")
+                .tag("reason", reason)
+                .register(registry)
+                .increment();
+    }
+
+    /**
+     * 子 Agent 委派
+     */
+    public void agentDelegate(String expert, boolean success) {
+        Counter.builder("prd2api_agent_delegate_total")
+                .description("子 Agent 委派次数")
+                .tag("expert", expert)
+                .tag("status", success ? "success" : "fail")
                 .register(registry)
                 .increment();
     }

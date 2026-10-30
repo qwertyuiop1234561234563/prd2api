@@ -17,6 +17,7 @@ import com.dbappsecurity.prd2api.service.AssistantContextService;
 import com.dbappsecurity.prd2api.service.AssistantMemoryService;
 import com.dbappsecurity.prd2api.service.AssistantMemoryService.MemoryItem;
 import com.dbappsecurity.prd2api.service.AssistantSelfCheckService;
+import com.dbappsecurity.prd2api.service.AssistantToolSelector;
 import com.dbappsecurity.prd2api.service.LlmInvokeService;
 import com.dbappsecurity.prd2api.service.LlmInvokeService.ToolCall;
 import com.dbappsecurity.prd2api.service.LlmInvokeService.ToolChatResult;
@@ -50,6 +51,8 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
     private static final int MAX_STEP_ARGS = 160;
     private static final int MAX_STEP_RESULT = 300;
     private static final int MAX_SUMMARY_CHARS = 2000;
+    /** 子 Agent 递归深度，防止 A 委派 B、B 再委派 A 的无限套娃 */
+    private static final ThreadLocal<Integer> DELEGATE_DEPTH = ThreadLocal.withInitial(() -> 0);
 
     private final LlmInvokeService llmInvokeService;
     private final AssistantToolRegistry toolRegistry;
@@ -58,6 +61,7 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
     private final AssistantMemoryService memoryService;
     private final AssistantContextService contextService;
     private final AssistantSelfCheckService selfCheckService;
+    private final AssistantToolSelector toolSelector;
     private final MetricUtil metricUtil;
     private final KnowledgeBaseService knowledgeBaseService;
     private final AssistantActionService actionService;
@@ -210,18 +214,39 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
         messages.addAll(context.messages());
         if (context.compressed()) {
             AgentStepVO contextStep = contextStep(context, config);
+            contextStep.setStepNo(steps.size() + 1);
             steps.add(contextStep);
             emitStep(listener, emitted, contextStep);
         }
 
-        String toolsJson = toolRegistry.definitionsJson();
+        // 工具动态检索：只把与本轮问题相关的工具注入 prompt
+        AssistantToolSelector.Selection selection = toolSelector.select(message);
+        if (selection.filtered()) {
+            AgentStepVO routeStep = routeStep(selection);
+            routeStep.setStepNo(steps.size() + 1);
+            steps.add(routeStep);
+            emitStep(listener, emitted, routeStep);
+        }
+        String toolsJson = selection.toolsJson();
+
         long tokens = 0L;
         String actionType = AssistantActionType.NONE;
         String actionLabel = null;
         String actionTarget = null;
         Object actionData = null;
+        long deadline = System.currentTimeMillis() + Math.max(1000L, config.getRunTimeoutMs());
+        // 同一工具 + 相同参数重复调用的计数，用于识别死循环
+        Map<String, Integer> callCounts = new LinkedHashMap<>();
 
         for (int stepNo = 1; stepNo <= config.getMaxSteps(); stepNo++) {
+            if (tokens >= config.getMaxTokenBudget()) {
+                return budgetOutcome(steps, tokens, actionType, actionLabel, actionTarget, actionData,
+                        "token", listener, emitted);
+            }
+            if (System.currentTimeMillis() > deadline) {
+                return budgetOutcome(steps, tokens, actionType, actionLabel, actionTarget, actionData,
+                        "deadline", listener, emitted);
+            }
             if (listener != null) {
                 listener.onPhase(stepNo, "THINKING");
             }
@@ -245,10 +270,34 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
             }
             messages.add(assistantToolCallMessage(result));
 
-            // 先分流：危险操作生成确认票据，其余工具并行执行
+            // 先分流：子 Agent 委派 / 参数缺失追问 / 危险操作确认 / 普通工具并行执行
             List<ToolCall> executable = new ArrayList<>();
+            List<ToolCall> delegations = new ArrayList<>();
             PendingAction pending = null;
+            boolean loopDetected = false;
             for (ToolCall call : result.toolCalls()) {
+                String signature = call.name() + "|"
+                        + StrUtil.blankToDefault(call.arguments(), "{}").replaceAll("\\s+", "");
+                int repeat = callCounts.merge(signature, 1, Integer::sum);
+                if (repeat > Math.max(1, config.getToolRepeatLimit())) {
+                    AgentStepVO step = loopStep(call, repeat);
+                    step.setStepNo(steps.size() + 1);
+                    steps.add(step);
+                    emitStep(listener, emitted, step);
+                    messages.add(Map.of("role", "tool",
+                            "tool_call_id", StrUtil.blankToDefault(call.id(), "call_loop_" + stepNo),
+                            "content", "检测到重复调用（相同工具与参数已执行 " + (repeat - 1) + " 次），已阻止继续执行。"));
+                    loopDetected = true;
+                    continue;
+                }
+                if ("delegate_task".equals(call.name()) && config.isDelegateEnabled()) {
+                    delegations.add(call);
+                    continue;
+                }
+                List<String> missing = toolRegistry.missingRequired(call.name(), call.arguments());
+                if (!missing.isEmpty()) {
+                    return clarifyOutcome(steps, tokens, call, missing, listener, emitted);
+                }
                 if (toolRegistry.requiresConfirm(call.name(), forceConfirm)) {
                     String summary = confirmSummary(call);
                     String confirmId = confirmationService.create(sessionId, call.name(), call.arguments(), summary);
@@ -266,6 +315,19 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
                 } else {
                     executable.add(call);
                 }
+            }
+
+            // 子 Agent 委派串行执行，父 Agent 只拿到结构化结论
+            for (ToolCall call : delegations) {
+                Delegation delegation = delegate(call, config);
+                tokens += delegation.tokens();
+                AgentStepVO step = delegation.step();
+                step.setStepNo(steps.size() + 1);
+                steps.add(step);
+                emitStep(listener, emitted, step);
+                messages.add(Map.of("role", "tool",
+                        "tool_call_id", StrUtil.blankToDefault(call.id(), "call_delegate_" + stepNo),
+                        "content", delegation.summary()));
             }
 
             for (AssistantToolExecutor.Execution execution : toolExecutor.executeAll(executable)) {
@@ -290,6 +352,10 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
             // 有危险操作待确认：立刻返回确定性提示，避免模型误以为已执行
             if (pending != null) {
                 return pendingOutcome(steps, tokens, pending);
+            }
+            if (loopDetected && executable.isEmpty() && delegations.isEmpty()) {
+                return budgetOutcome(steps, tokens, actionType, actionLabel, actionTarget, actionData,
+                        "loop", listener, emitted);
             }
         }
         // 达到步数上限：再做一次不带工具的总结，避免把原始 JSON 抛给用户
@@ -673,6 +739,236 @@ public class AssistantAgentServiceImpl implements AssistantAgentService {
         emitStep(listener, emitted, step);
         metricUtil.agentSelfCheck(result.grounded());
         return finalReply;
+    }
+
+    /**
+     * 工具动态检索轨迹：让用户看到“这轮为什么只给了模型这几个工具”
+     */
+    private AgentStepVO routeStep(AssistantToolSelector.Selection selection) {
+        AgentStepVO step = new AgentStepVO();
+        step.setStepNo(1);
+        step.setType("ROUTE");
+        step.setToolName("tool_route");
+        step.setTitle("工具动态检索");
+        step.setArguments(StrUtil.maxLength("候选 " + selection.candidates() + " 个工具，按语义匹配裁剪",
+                MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength("注入 " + selection.toolNames().size() + " 个工具："
+                + String.join("、", selection.toolNames()), MAX_STEP_RESULT));
+        step.setSuccess(true);
+        step.setTime(LocalDateTime.now());
+        return step;
+    }
+
+    /**
+     * 重复调用拦截轨迹
+     */
+    private AgentStepVO loopStep(ToolCall call, int repeat) {
+        AgentStepVO step = new AgentStepVO();
+        step.setStepNo(1);
+        step.setType("LOOP");
+        step.setToolName(call.name());
+        step.setTitle("重复调用拦截");
+        step.setArguments(StrUtil.maxLength(call.arguments(), MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength("相同工具与参数第 " + repeat + " 次调用，已阻止继续执行以避免死循环",
+                MAX_STEP_RESULT));
+        step.setSuccess(false);
+        step.setTime(LocalDateTime.now());
+        return step;
+    }
+
+    /**
+     * 必填参数缺失：不盲目执行，先向用户追问，避免拿错误参数去查/改数据
+     */
+    private AgentOutcome clarifyOutcome(List<AgentStepVO> steps, long tokens, ToolCall call,
+                                        List<String> missing, AgentListener listener, AtomicInteger emitted) {
+        String title = toolRegistry.title(call.name());
+        List<String> labels = missing.stream().map(this::fieldLabel).toList();
+        AgentStepVO step = new AgentStepVO();
+        step.setStepNo(steps.size() + 1);
+        step.setType("CLARIFY");
+        step.setToolName(call.name());
+        step.setTitle("待补充参数：" + title);
+        step.setArguments(StrUtil.maxLength(call.arguments(), MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength("缺少必填参数：" + String.join("、", labels), MAX_STEP_RESULT));
+        step.setSuccess(false);
+        step.setTime(LocalDateTime.now());
+        steps.add(step);
+        emitStep(listener, emitted, step);
+        String reply = "「" + title + "」还差 " + String.join("、", labels)
+                + " 才能执行。你补充一下我再继续；不想麻烦的话，也可以直接说页面名称或从列表里选。";
+        return new AgentOutcome(reply, "AGENT", false, steps, AssistantActionType.NONE, null,
+                null, null, tokens, List.of());
+    }
+
+    private String fieldLabel(String field) {
+        return switch (StrUtil.blankToDefault(field, "")) {
+            case "taskId" -> "任务 ID（32 位十六进制）";
+            case "query" -> "检索关键词";
+            case "key" -> "记忆键";
+            case "value" -> "记忆内容";
+            case "page" -> "页面名称";
+            case "expert" -> "专家类型";
+            case "goal" -> "子目标描述";
+            default -> StrUtil.blankToDefault(field, "参数");
+        };
+    }
+
+    /**
+     * 预算/死循环熔断：停止自动执行，用已有结果收尾，保证用户始终拿到可用答复
+     */
+    private AgentOutcome budgetOutcome(List<AgentStepVO> steps, long tokens, String actionType,
+                                       String actionLabel, String actionTarget, Object actionData,
+                                       String reason, AgentListener listener, AtomicInteger emitted) {
+        String label = switch (reason) {
+            case "token" -> "本轮 token 预算已用完";
+            case "deadline" -> "本轮执行超过时限";
+            default -> "检测到重复调用，已中止以免死循环";
+        };
+        AgentStepVO step = new AgentStepVO();
+        step.setStepNo(steps.size() + 1);
+        step.setType("BUDGET");
+        step.setToolName("agent_budget");
+        step.setTitle("执行保护触发");
+        step.setArguments(StrUtil.maxLength("原因：" + label, MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength(label + "，停止继续调度工具，改用已有结果收尾", MAX_STEP_RESULT));
+        step.setSuccess(false);
+        step.setTime(LocalDateTime.now());
+        steps.add(step);
+        emitStep(listener, emitted, step);
+        metricUtil.agentBudgetStop(reason);
+        StringBuilder reply = new StringBuilder();
+        List<AgentStepVO> done = steps.stream().filter(AgentStepVO::isSuccess).toList();
+        if (done.isEmpty()) {
+            reply.append(label).append("，这轮没能拿到结果。可以把问题拆小一点再问一次。");
+        } else {
+            reply.append(label).append("，我先把已经拿到的结果给你：\n");
+            for (AgentStepVO item : done) {
+                reply.append("- ").append(item.getTitle()).append("：")
+                        .append(StrUtil.maxLength(item.getResult(), 120)).append('\n');
+            }
+        }
+        return new AgentOutcome(reply.toString(), "AGENT", false, steps, actionType, actionLabel,
+                actionTarget, actionData, tokens, List.of());
+    }
+
+    /**
+     * 子 Agent 委派：专家只拿到自己领域的工具，父 Agent 只拿结构化结论，避免上下文互相污染
+     */
+    private Delegation delegate(ToolCall call, Prd2ApiProperties.Agent config) {
+        String expert = argOf(call.arguments(), "expert");
+        String goal = argOf(call.arguments(), "goal");
+        String label = expertLabel(expert);
+        long start = System.currentTimeMillis();
+        List<String> expertTools = toolRegistry.expertTools(expert);
+        if (expertTools.isEmpty()) {
+            metricUtil.agentDelegate(expert, false);
+            return failedDelegation(call, label, goal,
+                    "未知专家类型：" + StrUtil.blankToDefault(expert, "空") + "，可用：" + toolRegistry.experts(),
+                    0L, start);
+        }
+        if (DELEGATE_DEPTH.get() >= 1) {
+            metricUtil.agentDelegate(expert, false);
+            return failedDelegation(call, label, goal, "不支持多级子 Agent 套娃，请由上层直接完成", 0L, start);
+        }
+        String goalText = StrUtil.isBlank(goal) ? "按你的职责完成用户的上一个请求" : goal;
+        List<Map<String, Object>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "system", "content", toolRegistry.expertPrompt(expert)
+                + "\n【平台事实，仅可基于以下内容回答】\n" + AssistantPromptConstant.SYSTEM_PROMPT));
+        messages.add(Map.of("role", "user", "content", "【子目标】" + goalText
+                + "\n请调用工具完成子目标，最后用一段中文汇总事实（含具体数字与来源），不要输出 JSON。"));
+        String toolsJson = toolRegistry.definitionsJson(expertTools);
+        long subTokens = 0L;
+        String summary = "";
+        List<String> trace = new ArrayList<>();
+        DELEGATE_DEPTH.set(DELEGATE_DEPTH.get() + 1);
+        try {
+            for (int i = 0; i < Math.max(1, config.getSubAgentSteps()); i++) {
+                ToolChatResult result = llmInvokeService.chatWithTools(messages, toolsJson, "default");
+                subTokens += result.tokens();
+                if (result.toolCalls().isEmpty()) {
+                    summary = StrUtil.blankToDefault(result.content(), "").trim();
+                    break;
+                }
+                messages.add(assistantToolCallMessage(result));
+                for (ToolCall subCall : result.toolCalls()) {
+                    String callId = StrUtil.blankToDefault(subCall.id(), "call_sub_" + i);
+                    if (!expertTools.contains(subCall.name())) {
+                        messages.add(Map.of("role", "tool", "tool_call_id", callId,
+                                "content", "该工具不在你的能力范围，请只用可用工具完成子目标。"));
+                        continue;
+                    }
+                    List<String> missing = toolRegistry.missingRequired(subCall.name(), subCall.arguments());
+                    if (!missing.isEmpty()) {
+                        messages.add(Map.of("role", "tool", "tool_call_id", callId,
+                                "content", "缺少必填参数：" + String.join("、", missing) + "，请补全后重试。"));
+                        continue;
+                    }
+                    AssistantToolRegistry.ToolResult toolResult =
+                            toolRegistry.execute(subCall.name(), subCall.arguments());
+                    trace.add(toolRegistry.title(subCall.name()) + "：" + toolResult.success());
+                    messages.add(Map.of("role", "tool", "tool_call_id", callId,
+                            "content", StrUtil.blankToDefault(toolResult.summary(), "无文本结果")));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("子 Agent 执行失败 expert={} msg={}", expert, e.getMessage());
+            metricUtil.agentDelegate(expert, false);
+            return failedDelegation(call, label, goal, "子 Agent 执行失败：" + e.getMessage(), subTokens, start);
+        } finally {
+            DELEGATE_DEPTH.set(DELEGATE_DEPTH.get() - 1);
+        }
+        if (StrUtil.isBlank(summary)) {
+            summary = "子 Agent 已执行 " + trace.size() + " 次工具调用（" + String.join("、", trace)
+                    + "），未能在步数内产出汇总结论，请上层基于工具结果回答。";
+        }
+        metricUtil.agentDelegate(expert, true);
+        AgentStepVO step = new AgentStepVO();
+        step.setType("SUBAGENT");
+        step.setToolName("delegate_task");
+        step.setTitle("委派" + label);
+        step.setArguments(StrUtil.maxLength(goalText, MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength(summary, MAX_STEP_RESULT));
+        step.setLatencyMs(System.currentTimeMillis() - start);
+        step.setSuccess(true);
+        step.setTime(LocalDateTime.now());
+        return new Delegation(step, summary, subTokens);
+    }
+
+    private Delegation failedDelegation(ToolCall call, String label, String goal, String reason,
+                                        long tokens, long start) {
+        AgentStepVO step = new AgentStepVO();
+        step.setType("SUBAGENT");
+        step.setToolName("delegate_task");
+        step.setTitle("委派" + label + "失败");
+        step.setArguments(StrUtil.maxLength(StrUtil.blankToDefault(goal, call.arguments()), MAX_STEP_ARGS));
+        step.setResult(StrUtil.maxLength(reason, MAX_STEP_RESULT));
+        step.setLatencyMs(System.currentTimeMillis() - start);
+        step.setSuccess(false);
+        step.setTime(LocalDateTime.now());
+        return new Delegation(step, "委派失败：" + reason, tokens);
+    }
+
+    private String expertLabel(String expert) {
+        return switch (StrUtil.blankToDefault(expert, "")) {
+            case "data_analyst" -> "数据分析师";
+            case "doc_writer" -> "文档撰写";
+            default -> StrUtil.blankToDefault(expert, "专家");
+        };
+    }
+
+    private String argOf(String argumentsJson, String field) {
+        try {
+            return objectMapper.readTree(StrUtil.blankToDefault(argumentsJson, "{}"))
+                    .path(field).asText("").trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * 委派结果：子 Agent 轨迹 + 结构化结论 + token 消耗
+     */
+    private record Delegation(AgentStepVO step, String summary, long tokens) {
     }
 
     private AgentStepVO buildStep(int stepNo, ToolCall call,

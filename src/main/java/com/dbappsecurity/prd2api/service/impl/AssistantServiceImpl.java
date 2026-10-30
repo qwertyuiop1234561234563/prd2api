@@ -377,6 +377,12 @@ public class AssistantServiceImpl implements AssistantService {
             vo.setSelfCheckEnabled(config.isSelfCheck());
             vo.setSemanticCacheEnabled(config.isSemanticCache());
             vo.setSemanticCacheThreshold(config.getSemanticCacheThreshold());
+            vo.setToolRoutingEnabled(config.isToolRouting());
+            vo.setToolTopK(config.getToolTopK());
+            vo.setRunTimeoutMs(config.getRunTimeoutMs());
+            vo.setMaxTokenBudget(config.getMaxTokenBudget());
+            vo.setDelegateEnabled(config.isDelegateEnabled());
+            vo.setExperts(toolRegistry.experts().stream().sorted().toList());
         }
         return vo;
     }

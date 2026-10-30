@@ -236,5 +236,21 @@ public class Prd2ApiProperties {
         private int semanticCacheTtlSeconds = 1800;
         /** 单用户语义缓存最多保留条数 */
         private int semanticCacheMaxEntries = 100;
+        /** 是否开启工具动态检索：按问题语义只注入相关工具，避免工具变多后 prompt 膨胀 */
+        private boolean toolRouting = true;
+        /** 动态检索注入的工具数量上限 */
+        private int toolTopK = 7;
+        /** 工具检索的余弦相似度下限，低于该值不注入（核心工具始终保留） */
+        private double toolMinScore = 0.2D;
+        /** 单轮 Agent 执行的总超时（毫秒），超时强制收口 */
+        private long runTimeoutMs = 90000L;
+        /** 单轮 Agent 的 token 预算，超出后停止继续决策 */
+        private long maxTokenBudget = 30000L;
+        /** 同一工具 + 相同参数允许重复执行的次数，超过判定为死循环 */
+        private int toolRepeatLimit = 2;
+        /** 是否允许委派子 Agent（专家子任务） */
+        private boolean delegateEnabled = true;
+        /** 子 Agent 最多决策步数 */
+        private int subAgentSteps = 3;
     }
 }

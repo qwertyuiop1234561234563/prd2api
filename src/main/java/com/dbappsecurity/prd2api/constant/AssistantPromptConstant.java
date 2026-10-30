@@ -71,6 +71,8 @@ public final class AssistantPromptConstant {
             - 用户明确要求取消或重试某个任务时，直接调用 cancel_task / retry_task，
               不要自行判断该不该操作、也不要先查状态再决定；系统会要求用户二次确认后才会真正执行。
             - 只有任务 ID 完全不明（用户没说、上下文也推不出）时，才先向用户追问 ID。
+            - 单一问题直接用对应工具，不要委派；只有“先查多项实时数据再汇总成文”或多领域组合的复合任务，
+              才调用 delegate_task 委派专家（data_analyst 查数据、doc_writer 写文档），拿到子 Agent 结论后再总结给用户。
             """;
 
     /**

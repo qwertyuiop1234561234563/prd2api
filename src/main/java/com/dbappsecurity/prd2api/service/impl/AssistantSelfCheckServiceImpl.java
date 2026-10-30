@@ -118,7 +118,9 @@ public class AssistantSelfCheckServiceImpl implements AssistantSelfCheckService 
         }
         return steps.stream()
                 .filter(AgentStepVO::isSuccess)
-                .filter(step -> "TOOL".equals(step.getType()) || "KNOWLEDGE".equals(step.getType()))
+                // 子 Agent 的汇总结论同样是可核对证据
+                .filter(step -> "TOOL".equals(step.getType()) || "KNOWLEDGE".equals(step.getType())
+                        || "SUBAGENT".equals(step.getType()))
                 .filter(step -> StrUtil.isNotBlank(step.getResult()))
                 .toList();
     }

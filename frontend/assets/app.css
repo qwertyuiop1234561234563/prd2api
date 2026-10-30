@@ -1522,3 +1522,79 @@
     mask-image:radial-gradient(circle 66vw at 110% -10%, #000 0%, rgba(0,0,0,.5) 46%, transparent 76%);
     -webkit-mask-image:radial-gradient(circle 66vw at 110% -10%, #000 0%, rgba(0,0,0,.5) 46%, transparent 76%);
   }
+
+  /* ══════════ 奶油午夜蓝 v5：底色整体提亮一档，加一层奶感 ══════════
+     底色从近黑提到可读的午夜蓝，顶部叠一层极淡的暖白，出现"奶油"质感；
+     所有不透明面板同步提亮，保证卡片与背景的层次不被抹平。 */
+  :root{
+    --void:#102339;
+    --sticker:#22496F;
+    --faint:#82A4C2;
+  }
+
+  body{
+    background:
+      radial-gradient(92% 40% at 50% -6%, rgba(243,251,255,.16), transparent 64%),
+      radial-gradient(115% 62% at 50% -6%, #35678F 0%, #2A557E 22%, #1F4566 52%, #173450 78%, #132B45 100%),
+      #132B45;
+  }
+  .aurora{opacity:.32}
+  .grid{
+    background-image:
+      radial-gradient(rgba(243,251,255,.18) 1.3px, transparent 1.5px),
+      radial-gradient(rgba(255,143,210,.16) 1.2px, transparent 1.4px);
+  }
+  #stars{opacity:.28}
+  body::after{
+    background-image:repeating-radial-gradient(circle at 110% -10%,
+      rgba(243,251,255,.1) 0 1px, transparent 1px 46px);
+  }
+
+  /* 顶栏与导航 */
+  .topbar{background:linear-gradient(180deg, #3A6C93, #22496B)}
+  .chip{background:#2B5A82}
+  .nav a{background:#2B5A82; color:#D3E6F7}
+  .nav a.active{background:linear-gradient(120deg, var(--mint), var(--aqua)); color:#04141F}
+  .back{background:#2B5A82}
+
+  /* 表单与按钮 */
+  .btn{background:#2F6188}
+  input, select, textarea{background:#254B6C}
+  input:focus, select:focus, textarea:focus{background:#254B6C; border-color:var(--aqua-lit)}
+
+  /* 卡片 */
+  .panel{background:linear-gradient(155deg, #38688F 0%, #21496B 100%)}
+  .task{background:linear-gradient(150deg, #2C5680, #1D3F5E)}
+  .task:hover{background:linear-gradient(150deg, #33608B, #204565)}
+  .stat-strip{background:linear-gradient(160deg, #2A547C, #1B3D5B)}
+  .acc-card{background:linear-gradient(150deg, #305884, #1C3D5E)}
+  .vip-metric{background:#2A547C; border-color:rgba(125,251,239,.3)}
+  .coupon-item{background:#274E71; border-color:rgba(125,251,239,.3)}
+  .mine-item{background:#274E71; border-color:rgba(176,147,255,.4)}
+  .coupon-empty{background:rgba(39,78,113,.55); border-color:rgba(125,251,239,.26)}
+
+  /* 上传区与看板娘 */
+  .dropzone{
+    background:repeating-linear-gradient(-45deg, rgba(125,251,239,.12) 0 10px, rgba(125,251,239,.04) 10px 20px);
+  }
+  .dropzone:hover{
+    background:repeating-linear-gradient(-45deg, rgba(125,251,239,.2) 0 10px, rgba(125,251,239,.07) 10px 20px);
+  }
+  .dz-formats span{background:#2F5F88}
+  .upload-result{background:rgba(38,79,114,.72)}
+  .mascot{background:#1A3A57}
+  .mascot-art::after{
+    background:linear-gradient(180deg, rgba(26,58,87,.1) 0%, rgba(26,58,87,0) 26%, rgba(26,58,87,.55) 74%, #1A3A57 100%);
+  }
+  .speech{background:#254C6E}
+  .mascot-name{background:rgba(19,43,69,.82)}
+
+  /* 报告区空态与右栏 */
+  .empty{background:rgba(31,66,98,.5)}
+  .report-empty{background:rgba(34,71,105,.5)}
+  .toc{color:var(--dim)}
+
+  /* 玩偶浮层 */
+  .fufu-chat{background:linear-gradient(168deg, rgba(45,86,124,.96), rgba(23,49,77,.97))}
+  .fufu-bubble{background:#254C6E; border-color:rgba(125,251,239,.45)}
+  .fc-tip{background:#2B5A82}

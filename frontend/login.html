@@ -231,16 +231,17 @@
   /* ══════════ 糖果卡通层 v2：与主站一致 ══════════ */
   :root{
     --aqua:#2FD9CE; --aqua-lit:#7DFBEF; --pink:#FF8FD2; --violet:#B093FF;
-    --lemon:#FFE07A; --mint:#8DFFC7; --cream:#F3FBFF; --dim:#A6C2DC; --faint:#7391AE;
+    --lemon:#FFE07A; --mint:#8DFFC7; --cream:#F3FBFF; --dim:#A6C2DC; --faint:#82A4C2;
     --line:rgba(125,251,239,.2); --line-strong:rgba(125,251,239,.42);
   }
   /* 背景：与主站一致的夜空舞台（纵深底色 + 边缘糖点 + 舞台地光） */
   body{
     background:
-      radial-gradient(112% 48% at 50% -8%, #1B3F69 0%, #14355B 26%, #0D2440 52%, #08182C 76%, #05101E 100%),
-      #05101E;
+      radial-gradient(92% 40% at 50% -6%, rgba(243,251,255,.16), transparent 64%),
+      radial-gradient(115% 62% at 50% -6%, #35678F 0%, #2A557E 22%, #1F4566 52%, #173450 78%, #132B45 100%),
+      #132B45;
   }
-  .aurora{inset:0; filter:blur(120px); opacity:.42}
+  .aurora{inset:0; filter:blur(120px); opacity:.32}
   .aurora i{mix-blend-mode:normal}
   .aurora i:nth-child(1){width:52vw;height:52vw;left:-20%;top:-18%;background:radial-gradient(circle,rgba(47,217,206,.4),transparent 66%)}
   .aurora i:nth-child(2){width:44vw;height:44vw;right:-18%;top:-14%;background:radial-gradient(circle,rgba(255,143,210,.3),transparent 64%);animation-delay:-7s}
@@ -277,30 +278,30 @@
   }
   .brand-mark h1 em{background-image:linear-gradient(100deg, var(--pink), var(--lemon))}
   .auth-card{
-    border-radius:26px; border-color:rgba(125,251,239,.42);
-    background:linear-gradient(168deg, #17395C, #0C1F33);
-    box-shadow:inset 0 2px 0 rgba(255,255,255,.08), 0 6px 0 #05121F, 0 24px 60px rgba(0,0,0,.55);
+    border-radius:26px; border-color:rgba(125,251,239,.45);
+    background:linear-gradient(168deg, #38688F, #22496B);
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.12), 0 6px 0 #0A1C30, 0 26px 60px rgba(6,18,32,.45);
   }
-  .auth-tabs{border-radius:999px; border-width:2px; background:#132C4A}
+  .auth-tabs{border-radius:999px; border-width:2px; background:#2B5A82}
   .auth-tab{border-radius:999px; font-size:13px}
   .auth-tab.active{background:linear-gradient(120deg, var(--mint), var(--aqua))}
-  input{border-radius:15px; border-width:2px; border-color:rgba(125,251,239,.3); background:#123049; box-shadow:0 3px 0 #05121F}
-  input:focus{border-color:var(--aqua-lit); background:#123049; box-shadow:0 3px 0 #05121F, 0 0 0 4px rgba(255,143,210,.16)}
+  input{border-radius:15px; border-width:2px; border-color:rgba(125,251,239,.34); background:#254B6C; box-shadow:0 3px 0 #0A1C30}
+  input:focus{border-color:var(--aqua-lit); background:#254B6C; box-shadow:0 3px 0 #0A1C30, 0 0 0 4px rgba(255,143,210,.16)}
   .submit{
     border-radius:16px;
     background:linear-gradient(120deg, var(--mint), var(--aqua-lit) 34%, var(--aqua) 64%, var(--violet));
-    box-shadow:0 4px 0 #05121F, 0 12px 26px rgba(47,217,206,.3);
+    box-shadow:0 4px 0 #0A1C30, 0 12px 26px rgba(47,217,206,.3);
   }
   .submit:hover{transform:translateY(-2px) rotate(-.6deg)}
-  .note{border-radius:14px; border-width:2px}
-  .mascot-strip{border-radius:24px; border-width:2px; border-color:rgba(125,251,239,.4); box-shadow:inset 0 2px 0 rgba(255,255,255,.07), 0 5px 0 #05121F}
+  .note{border-radius:14px; border-width:2px; background:rgba(37,76,110,.72)}
+  .mascot-strip{border-radius:24px; border-width:2px; border-color:rgba(125,251,239,.42); background:#1A3A57; box-shadow:inset 0 2px 0 rgba(255,255,255,.08), 0 5px 0 #0A1C30}
   .mascot-strip .tag{border-radius:999px}
-  .back{border-radius:999px; border-width:2px; background:#132C4A; box-shadow:0 3px 0 #05121F}
-  .session .who{border-radius:18px; border-width:2px; border-color:rgba(125,251,239,.32)}
+  .back{border-radius:999px; border-width:2px; background:#2B5A82; box-shadow:0 3px 0 #0A1C30}
+  .session .who{border-radius:18px; border-width:2px; border-color:rgba(125,251,239,.34); background:#254B6C}
   .session .avatar{border-radius:14px; border-color:rgba(125,251,239,.45)}
   ::-webkit-scrollbar{width:10px; height:10px}
-  ::-webkit-scrollbar-track{background:rgba(6,20,35,.45); border-radius:99px}
-  ::-webkit-scrollbar-thumb{border:2px solid #0B1B33; border-radius:99px; background:linear-gradient(180deg, var(--aqua), var(--violet))}
+  ::-webkit-scrollbar-track{background:rgba(19,44,68,.5); border-radius:99px}
+  ::-webkit-scrollbar-thumb{border:2px solid #102339; border-radius:99px; background:linear-gradient(180deg, var(--aqua), var(--violet))}
 </style>
 </head>
 <body>

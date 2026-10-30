@@ -54,6 +54,24 @@ public class AssistantCapabilityVO {
     @Schema(description = "语义缓存余弦相似度阈值")
     private double semanticCacheThreshold;
 
+    @Schema(description = "是否开启工具动态检索（Tool RAG）")
+    private boolean toolRoutingEnabled;
+
+    @Schema(description = "工具动态检索 top-k")
+    private int toolTopK;
+
+    @Schema(description = "单轮执行时限（毫秒）")
+    private long runTimeoutMs;
+
+    @Schema(description = "单轮 token 预算")
+    private long maxTokenBudget;
+
+    @Schema(description = "是否开启子 Agent 委派")
+    private boolean delegateEnabled;
+
+    @Schema(description = "可用专家子 Agent")
+    private List<String> experts;
+
     @Data
     @Schema(description = "工具项")
     public static class ToolItem {
