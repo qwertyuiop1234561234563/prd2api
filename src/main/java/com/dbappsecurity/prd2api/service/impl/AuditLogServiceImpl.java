@@ -27,6 +27,8 @@ public class AuditLogServiceImpl implements AuditLogService {
     private static final int TARGET_MAX = 128;
     private static final int URI_MAX = 256;
     private static final int ERROR_MAX = 500;
+    /** 单次删除上限：大表清理分批执行，避免长事务与超大 undo log */
+    private static final int DELETE_BATCH = 5000;
 
     private final AuditLogMapper auditLogMapper;
 
@@ -73,11 +75,19 @@ public class AuditLogServiceImpl implements AuditLogService {
     @Override
     public int cleanExpired(int expireDay) {
         LocalDateTime before = LocalDateTime.now().minusDays(Math.max(1, expireDay));
-        int deleted = auditLogMapper.delete(new LambdaQueryWrapper<AuditLog>()
-                .lt(AuditLog::getCreateTime, before));
-        if (deleted > 0) {
-            log.info("清理过期审计日志 {} 条，阈值={} 天", deleted, Math.max(1, expireDay));
+        int total = 0;
+        while (true) {
+            int deleted = auditLogMapper.delete(new LambdaQueryWrapper<AuditLog>()
+                    .lt(AuditLog::getCreateTime, before)
+                    .last("limit " + DELETE_BATCH));
+            total += deleted;
+            if (deleted < DELETE_BATCH) {
+                break;
+            }
         }
-        return deleted;
+        if (total > 0) {
+            log.info("清理过期审计日志 {} 条，阈值={} 天", total, Math.max(1, expireDay));
+        }
+        return total;
     }
 }

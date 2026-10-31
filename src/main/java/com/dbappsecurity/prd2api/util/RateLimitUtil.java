@@ -73,4 +73,34 @@ public class RateLimitUtil {
             log.error("限流校验异常 key={}", key, e);
         }
     }
+
+    /**
+     * 非抛异常版本：返回是否放行，供工具执行层做“限流后降级”而不是整轮失败
+     * <p>
+     * 限流组件自身异常时放行（fail-open），避免限流故障把 Agent 一起拖垮。
+     *
+     * @param key            限流 key
+     * @param limitPerMinute 每分钟允许次数，<=0 表示不限流
+     */
+    public boolean allowed(String key, int limitPerMinute) {
+        if (limitPerMinute <= 0) {
+            return true;
+        }
+        long now = System.currentTimeMillis();
+        String member = now + "-" + Thread.currentThread().getId() + "-" + Math.random();
+        try {
+            Long allowed = stringRedisTemplate.execute(SCRIPT, List.of(key),
+                    String.valueOf(now), String.valueOf(WINDOW_MILLIS),
+                    String.valueOf(limitPerMinute), member);
+            // 脚本返回 0 表示已超限；null 视作组件异常，同样放行
+            boolean ok = allowed == null || allowed != 0L;
+            if (!ok) {
+                log.warn("工具级限流命中 key={} limit={}/min", key, limitPerMinute);
+            }
+            return ok;
+        } catch (Exception e) {
+            log.error("限流校验异常，按放行处理 key={}", key, e);
+            return true;
+        }
+    }
 }

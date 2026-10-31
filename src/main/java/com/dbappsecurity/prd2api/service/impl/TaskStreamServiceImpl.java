@@ -1,6 +1,7 @@
 package com.dbappsecurity.prd2api.service.impl;
 
 import cn.hutool.core.util.StrUtil;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
 import com.dbappsecurity.prd2api.constant.TaskStatusEnum;
 import com.dbappsecurity.prd2api.entity.PrdTask;
@@ -110,6 +111,18 @@ public class TaskStreamServiceImpl implements TaskStreamService {
         return emitter;
     }
 
+    /**
+     * 进度推送只读取摘要字段：每秒轮询不能把 result_markdown 大字段一起拉出来
+     */
+    private PrdTask loadSummary(String taskId) {
+        return prdTaskMapper.selectOne(new LambdaQueryWrapper<PrdTask>()
+                .select(PrdTask::getTaskId, PrdTask::getTenantId, PrdTask::getUserKey,
+                        PrdTask::getFileMetaId, PrdTask::getVersionNo, PrdTask::getTaskStatus,
+                        PrdTask::getProgress, PrdTask::getErrorMsg, PrdTask::getModelCode,
+                        PrdTask::getCreateTime, PrdTask::getFinishTime)
+                .eq(PrdTask::getTaskId, taskId));
+    }
+
     private void cancel(ScheduledFuture<?> future) {
         if (future != null) {
             future.cancel(false);
@@ -122,7 +135,7 @@ public class TaskStreamServiceImpl implements TaskStreamService {
      * @return true 表示任务已终态（或连接不可用），无需继续轮询
      */
     private boolean pushOnce(String taskId, SseEmitter emitter, AtomicBoolean done) {
-        PrdTask task = prdTaskMapper.selectById(taskId);
+        PrdTask task = loadSummary(taskId);
         if (task == null) {
             finishWithError(emitter, done, "任务不存在");
             return true;
@@ -135,7 +148,7 @@ public class TaskStreamServiceImpl implements TaskStreamService {
             return;
         }
         try {
-            PrdTask task = prdTaskMapper.selectById(taskId);
+            PrdTask task = loadSummary(taskId);
             if (task == null) {
                 finishWithError(emitter, done, "任务已删除");
                 return;

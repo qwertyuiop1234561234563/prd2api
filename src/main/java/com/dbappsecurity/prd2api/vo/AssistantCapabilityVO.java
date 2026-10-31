@@ -72,6 +72,78 @@ public class AssistantCapabilityVO {
     @Schema(description = "可用专家子 Agent")
     private List<String> experts;
 
+    @Schema(description = "是否开启 Plan-and-Execute 计划编排")
+    private boolean planEnabled;
+
+    @Schema(description = "计划最多步骤数")
+    private int planMaxSteps;
+
+    @Schema(description = "是否支持用户中断执行")
+    private boolean cancelEnabled;
+
+    @Schema(description = "是否开启 Supervisor 多专家并行委派")
+    private boolean supervisorEnabled;
+
+    @Schema(description = "是否开启 Actor-Critic 答复评审")
+    private boolean criticEnabled;
+
+    @Schema(description = "评审触发重写的分数下限（1~5）")
+    private int criticMinScore;
+
+    @Schema(description = "是否开启修正检索（Corrective RAG）：置信度不足时改写查询补检")
+    private boolean correctiveRagEnabled;
+
+    @Schema(description = "检索置信度下限，低于该值触发查询改写")
+    private double retrievalMinConfidence;
+
+    @Schema(description = "是否开启记忆反思：从对话中归纳稳定偏好")
+    private boolean memoryReflectionEnabled;
+
+    @Schema(description = "是否开启断点续跑：未完成任务可用“继续”恢复")
+    private boolean checkpointEnabled;
+
+    @Schema(description = "是否开启工具选择经验策略（从历史成功轨迹学习工具先验）")
+    private boolean toolPolicyEnabled;
+
+    @Schema(description = "是否开启失败反思：工具失败先诊断再重试并沉淀教训")
+    private boolean reflectionEnabled;
+
+    @Schema(description = "是否开启 PII 脱敏：手机号/身份证/银行卡/邮箱统一打码")
+    private boolean piiMaskEnabled;
+
+    @Schema(description = "是否开启工具输出契约校验：伪成功自动降级或改写参数重检")
+    private boolean contractEnabled;
+
+    @Schema(description = "是否开启答复溯源：证据字符区间与引用覆盖率")
+    private boolean provenanceEnabled;
+
+    @Schema(description = "是否开启轨迹回放：只读步骤重跑检测漂移")
+    private boolean replayEnabled;
+
+    @Schema(description = "是否开启失败样本挖掘：失败沉淀为回归用例")
+    private boolean failureMiningEnabled;
+
+    @Schema(description = "是否开启用户反馈闭环：点踩自动转回归用例")
+    private boolean feedbackEnabled;
+
+    @Schema(description = "是否开启决策审计：逐轮合规检查与评分")
+    private boolean auditEnabled;
+
+    @Schema(description = "是否开启只读工具结果缓存")
+    private boolean toolCacheEnabled;
+
+    @Schema(description = "只读工具结果缓存 TTL（秒）")
+    private long toolCacheTtlSeconds;
+
+    @Schema(description = "是否开启工具入参安全守卫")
+    private boolean argumentGuardEnabled;
+
+    @Schema(description = "工具级限流：每用户每分钟单个工具最多执行次数，0 表示关闭")
+    private int toolRateLimitPerMinute;
+
+    @Schema(description = "是否开启失败归因诊断")
+    private boolean diagnoseEnabled;
+
     @Data
     @Schema(description = "工具项")
     public static class ToolItem {

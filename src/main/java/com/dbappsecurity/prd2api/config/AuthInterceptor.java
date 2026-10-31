@@ -38,6 +38,13 @@ public class AuthInterceptor implements HandlerInterceptor {
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String DEFAULT_TENANT = "default";
     private static final String DEFAULT_USER = "anonymous";
+    /** 管理端接口前缀 */
+    private static final String ADMIN_PATH = "/api/admin";
+    /**
+     * 知识库接口前缀：离线文档入库、启停、重建会直接影响所有对话的召回结果，
+     * 属于全局管理能力，与 /api/admin 一样仅管理员可访问
+     */
+    private static final String KNOWLEDGE_ADMIN_PATH = "/api/knowledge";
 
     /** 租户ID将参与本地存储目录拼接，必须严格限制字符集，防止路径穿越 */
     private static final Pattern TENANT_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
@@ -82,10 +89,18 @@ public class AuthInterceptor implements HandlerInterceptor {
             }
         }
 
-        if (request.getRequestURI().startsWith("/api/admin") && !TenantContextUtil.isAdmin()) {
-            writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN,
-                    "管理端接口需要 ADMIN 角色"));
-            return false;
+        String uri = request.getRequestURI();
+        if (!TenantContextUtil.isAdmin()) {
+            if (uri.startsWith(ADMIN_PATH)) {
+                writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN,
+                        "管理端接口需要 ADMIN 角色"));
+                return false;
+            }
+            if (uri.startsWith(KNOWLEDGE_ADMIN_PATH)) {
+                writeJson(response, RespModel.fail(BizErrorCodeEnum.FORBIDDEN,
+                        "知识库仅管理员可访问"));
+                return false;
+            }
         }
         return true;
     }

@@ -6,7 +6,7 @@
 <title>MIKU // PRD2API · 需求解析终端</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;800&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="assets/app.css">
 </head>
 <body data-page="workspace">
@@ -14,6 +14,10 @@
 <canvas id="stars"></canvas>
 <div class="grid"></div>
 <div class="scan"></div>
+<div class="miku-bg" aria-hidden="true">
+  <img class="miku-bg-art" src="assets/miku-bg.jpg" alt="" draggable="false">
+  <img class="miku-bg-spot" src="assets/miku-bg.jpg" alt="" draggable="false">
+</div>
 
 <div class="shell">
   <header class="topbar">
@@ -37,6 +41,8 @@
       <nav class="nav">
         <a href="index.html" class="active">工作台</a>
         <a href="account.html">账户中心</a>
+        <a href="profile.html">个人中心</a>
+        <a href="knowledge.html">知识库</a>
         <a href="settings.html">接入设置</a>
       </nav>
     </div>
@@ -123,6 +129,12 @@
           <div class="report-empty">
             <div class="glyph">♪ ♫ ♪</div>
             <p>选择左侧任务，查看评审报告<br>业务梳理 / 疑点清单 / DDL / 接口契约 / 任务清单</p>
+            <div class="ticker" aria-hidden="true">
+              <div class="ticker-in">
+                <span>PRD → 接口契约 → MySQL DDL → 研发任务 · 相似度查重 · RAG 语义检索 · 租户隔离 · 四阶段流水线</span>
+                <span>PRD → 接口契约 → MySQL DDL → 研发任务 · 相似度查重 · RAG 语义检索 · 租户隔离 · 四阶段流水线</span>
+              </div>
+            </div>
           </div>
         </div>
         <aside class="toc" id="toc"></aside>

@@ -82,10 +82,12 @@ prd2api:
     embedding-model: ${LLM_EMBEDDING_MODEL:embedding-3}
     # 允许模型发起工具调用；若所选模型不支持可设为 false
     tool-calling: ${LLM_TOOL_CALLING:true}
-    connect-timeout: 30000
-    read-timeout: 60000
-    max-retry: 2
-    retry-backoff-ms: 800
+    # 推理型模型（如 GLM-5.3-Flash）会先输出 reasoning_content，长文档单阶段实测可达 2~4 分钟，
+    # 读超时需显著大于单阶段耗时，否则会在正常生成中途被切断
+    connect-timeout: ${LLM_CONNECT_TIMEOUT_MS:30000}
+    read-timeout: ${LLM_READ_TIMEOUT_MS:300000}
+    max-retry: ${LLM_MAX_RETRY:2}
+    retry-backoff-ms: ${LLM_RETRY_BACKOFF_MS:800}
     temperature: 0.2
   limit:
     upload-per-minute: 20
@@ -151,6 +153,15 @@ prd2api:
     # 会话保留天数与清理时间
     session-expire-days: ${ASSISTANT_SESSION_EXPIRE_DAYS:30}
     clean-cron: "0 0 5 * * ?"
+    # 同一会话串行执行：并发请求会被快速拒绝，避免历史/检查点/记忆互相覆盖
+    chat-lock-enabled: ${ASSISTANT_CHAT_LOCK_ENABLED:true}
+    chat-lock-seconds: ${ASSISTANT_CHAT_LOCK_SECONDS:90}
+    # 并发舱壁：限制同时在执行的问答轮数，全局保护进程、租户维度隔离噪声邻居
+    bulkhead-enabled: ${ASSISTANT_BULKHEAD_ENABLED:true}
+    bulkhead-global-limit: ${ASSISTANT_BULKHEAD_GLOBAL_LIMIT:32}
+    bulkhead-tenant-limit: ${ASSISTANT_BULKHEAD_TENANT_LIMIT:8}
+    # 获取配额等待毫秒数，0 表示立即失败（快速失败，避免排队放大延迟）
+    bulkhead-wait-ms: ${ASSISTANT_BULKHEAD_WAIT_MS:0}
   # 桌面助手 Agent：ReAct 循环 + 工具调用 + 长期记忆 + 知识库
   agent:
     enabled: ${AGENT_ENABLED:true}
@@ -174,6 +185,116 @@ prd2api:
     injection-guard: ${AGENT_INJECTION_GUARD:true}
     # 工具执行线程池核心线程数
     tool-core: 4
+    # Supervisor 并行委派：同一轮多个专家子任务并发执行后统一汇总
+    supervisor-parallel: ${AGENT_SUPERVISOR_PARALLEL:true}
+    # 单个子 Agent 执行超时（毫秒），超时只标记该专家缺失
+    supervisor-timeout-ms: ${AGENT_SUPERVISOR_TIMEOUT_MS:60000}
+    # 单个子 Agent 的 token 预算，避免单个专家吃光全局预算
+    sub-agent-token-budget: ${AGENT_SUBAGENT_TOKEN_BUDGET:12000}
+    # Actor-Critic 答复评审：LLM-as-judge 三维打分，低分触发一次重写
+    critic-enabled: ${AGENT_CRITIC_ENABLED:true}
+    critic-min-score: ${AGENT_CRITIC_MIN_SCORE:4}
+    critic-rewrite: ${AGENT_CRITIC_REWRITE:true}
+    # Corrective RAG：检索置信度不足时改写查询并补一跳召回
+    corrective-rag: ${AGENT_CORRECTIVE_RAG:true}
+    retrieval-min-confidence: ${AGENT_RETRIEVAL_MIN_CONFIDENCE:0.45}
+    retrieval-max-hops: ${AGENT_RETRIEVAL_MAX_HOPS:2}
+    retrieval-rewrite-limit: ${AGENT_RETRIEVAL_REWRITE_LIMIT:2}
+    # 记忆反思：从对话中归纳稳定偏好写入长期记忆
+    memory-reflection: ${AGENT_MEMORY_REFLECTION:true}
+    memory-reflection-max-facts: ${AGENT_MEMORY_REFLECTION_MAX_FACTS:2}
+    # 断点续跑：未完成任务保存检查点，用户说“继续”时恢复并复用已完成步骤
+    checkpoint-enabled: ${AGENT_CHECKPOINT_ENABLED:true}
+    checkpoint-ttl-seconds: ${AGENT_CHECKPOINT_TTL:1800}
+    checkpoint-max-steps: ${AGENT_CHECKPOINT_MAX_STEPS:10}
+    # 工具选择经验策略：从历史成功轨迹学习“问法 → 工具”先验
+    tool-policy-enabled: ${AGENT_TOOL_POLICY_ENABLED:true}
+    tool-policy-min-score: ${AGENT_TOOL_POLICY_MIN_SCORE:0.4}
+    tool-policy-max-entries: ${AGENT_TOOL_POLICY_MAX_ENTRIES:200}
+    # 失败反思：工具失败后先诊断原因再重试，并把教训写入 Redis
+    reflection-enabled: ${AGENT_REFLECTION_ENABLED:true}
+    # PII 脱敏：输出、工具结果、会话记录中的手机号/身份证/银行卡/邮箱统一打码
+    pii-mask-enabled: ${AGENT_PII_MASK_ENABLED:true}
+    # 工具输出契约：伪成功（空检索/缺字段/原始 JSON）自动降级或改写参数重检
+    contract-enabled: ${AGENT_CONTRACT_ENABLED:true}
+    # 答复溯源：证据在答复中的字符区间与引用覆盖率
+    provenance-enabled: ${AGENT_PROVENANCE_ENABLED:true}
+    # 轨迹回放：历史只读步骤按原参数重跑，检测行为漂移
+    replay-enabled: ${AGENT_REPLAY_ENABLED:true}
+    # 失败样本挖掘：失败轨迹沉淀为可重放的回归用例
+    failure-mining-enabled: ${AGENT_FAILURE_MINING_ENABLED:true}
+    # 用户反馈闭环：点踩自动转回归用例
+    feedback-enabled: ${AGENT_FEEDBACK_ENABLED:true}
+    # 决策审计：逐轮校验合规规则并给出评分
+    audit-enabled: ${AGENT_AUDIT_ENABLED:true}
+    # 只读工具结果缓存：短 TTL 内同参数复用结果
+    tool-cache-enabled: ${AGENT_TOOL_CACHE_ENABLED:true}
+    tool-cache-ttl-seconds: ${AGENT_TOOL_CACHE_TTL:30}
+    # 工具入参安全守卫：注入内容、越界数值、非法 ID 执行前直接拒绝
+    argument-guard-enabled: ${AGENT_ARGUMENT_GUARD_ENABLED:true}
+    # 工具级限流：每用户每分钟单个工具最多执行次数，0 表示关闭
+    tool-rate-limit-per-minute: ${AGENT_TOOL_RATE_LIMIT:30}
+    # 失败归因诊断：按轨迹聚合失败原因并给出修复建议
+    diagnose-enabled: ${AGENT_DIAGNOSE_ENABLED:true}
+    # 记忆新鲜度阈值（天），超过视为陈旧记忆
+    memory-stale-days: ${AGENT_MEMORY_STALE_DAYS:30}
+    # 记忆冲突判定阈值：记忆键相似度下限（超过且取值不同视为矛盾记忆）
+    memory-conflict-similarity: ${AGENT_MEMORY_CONFLICT_SIMILARITY:0.3}
+    # PII 存量泄漏审计：扫描历史消息/轨迹中的明文个人信息，支持一键修复
+    pii-audit-enabled: ${AGENT_PII_AUDIT_ENABLED:true}
+    # 工具健康看板：成功率 SLO 下限与 P95 延迟上限，用于跨会话判级
+    tool-health-min-success-rate: ${AGENT_TOOL_HEALTH_MIN_SUCCESS_RATE:0.95}
+    tool-health-p95-ms: ${AGENT_TOOL_HEALTH_P95_MS:3000}
+    # 调用次数低于该值不做判级，避免一两次抖动误报
+    tool-health-min-calls: ${AGENT_TOOL_HEALTH_MIN_CALLS:5}
+    # 工具调用样例沉淀：从历史成功轨迹挖掘参数格式，生成 few-shot 样例注入提示词
+    tool-example-enabled: ${AGENT_TOOL_EXAMPLE_ENABLED:true}
+    tool-example-days: ${AGENT_TOOL_EXAMPLE_DAYS:30}
+    tool-example-max-per-tool: ${AGENT_TOOL_EXAMPLE_MAX_PER_TOOL:1}
+    tool-example-max-total: ${AGENT_TOOL_EXAMPLE_MAX_TOTAL:6}
+    tool-example-min-success: ${AGENT_TOOL_EXAMPLE_MIN_SUCCESS:3}
+    tool-example-ttl-seconds: ${AGENT_TOOL_EXAMPLE_TTL:600}
+    # 会话行为异常检测：中位数 + MAD 稳健离群，失败率/重复率保留绝对阈值兜底
+    anomaly-enabled: ${AGENT_ANOMALY_ENABLED:true}
+    anomaly-z-threshold: ${AGENT_ANOMALY_Z_THRESHOLD:3.0}
+    anomaly-min-sessions: ${AGENT_ANOMALY_MIN_SESSIONS:5}
+    # 计划校验：模型产出的计划在执行前检查工具是否存在、是否重复、是否缺少汇总步骤，并自动修复
+    plan-validation-enabled: ${AGENT_PLAN_VALIDATION_ENABLED:true}
+    # 工具依赖熔断：近期失败率过高的工具快速失败，冷却后进入半开只放行一次探测
+    circuit-enabled: ${AGENT_CIRCUIT_ENABLED:true}
+    circuit-window-calls: ${AGENT_CIRCUIT_WINDOW_CALLS:20}
+    circuit-min-calls: ${AGENT_CIRCUIT_MIN_CALLS:5}
+    circuit-failure-rate: ${AGENT_CIRCUIT_FAILURE_RATE:0.6}
+    circuit-cooldown-seconds: ${AGENT_CIRCUIT_COOLDOWN_SECONDS:30}
+    circuit-cache-ttl-seconds: ${AGENT_CIRCUIT_CACHE_TTL_SECONDS:30}
+    # 复杂度自适应模型路由：简单问题走轻模型、复杂问题走强模型，降低平均 token 成本
+    route-enabled: ${AGENT_ROUTE_ENABLED:true}
+    route-simple-threshold: ${AGENT_ROUTE_SIMPLE_THRESHOLD:35}
+    route-complex-threshold: ${AGENT_ROUTE_COMPLEX_THRESHOLD:65}
+    route-simple-model: ${AGENT_ROUTE_SIMPLE_MODEL:default}
+    route-standard-model: ${AGENT_ROUTE_STANDARD_MODEL:default}
+    route-complex-model: ${AGENT_ROUTE_COMPLEX_MODEL:default}
+    # 目标漂移自检：执行路径偏离初始目标时注入一次纠偏提示
+    goal-drift-enabled: ${AGENT_GOAL_DRIFT_ENABLED:true}
+    goal-drift-min-steps: ${AGENT_GOAL_DRIFT_MIN_STEPS:3}
+    goal-drift-focus-threshold: ${AGENT_GOAL_DRIFT_FOCUS_THRESHOLD:0.6}
+    goal-drift-weak-threshold: ${AGENT_GOAL_DRIFT_WEAK_THRESHOLD:0.35}
+    # 系统提示词 A/B 实验：按用户稳定分桶，小流量验证新提示词
+    prompt-ab-enabled: ${AGENT_PROMPT_AB_ENABLED:true}
+    prompt-ab-experiment: ${AGENT_PROMPT_AB_EXPERIMENT:assistant-system-v2}
+    prompt-ab-percent: ${AGENT_PROMPT_AB_PERCENT:50}
+    # 只读工具结果一级缓存（JVM 本地）+ 单飞回源，防止热点参数击穿 Redis 与下游
+    hot-cache-enabled: ${AGENT_HOT_CACHE_ENABLED:true}
+    hot-cache-ttl-seconds: ${AGENT_HOT_CACHE_TTL:5}
+    hot-cache-max-entries: ${AGENT_HOT_CACHE_MAX_ENTRIES:5000}
+  # 助手知识库：租户级离线文档上传、异步解析切分与向量化
+  knowledge:
+    max-docs-per-tenant: ${KNOWLEDGE_MAX_DOCS:200}
+    max-doc-size-mb: ${KNOWLEDGE_MAX_DOC_SIZE_MB:20}
+    max-chunks-per-doc: ${KNOWLEDGE_MAX_CHUNKS:2000}
+    embed-batch-size: ${KNOWLEDGE_EMBED_BATCH:16}
+    max-local-candidates: ${KNOWLEDGE_LOCAL_CANDIDATES:2000}
+    upload-per-minute: ${KNOWLEDGE_UPLOAD_PER_MINUTE:10}
   # 内置管理员：首次启动自动创建账号并开通最高等级 VIP；已存在账号不会覆盖密码
   admin-init:
     enabled: ${ADMIN_INIT_ENABLED:true}

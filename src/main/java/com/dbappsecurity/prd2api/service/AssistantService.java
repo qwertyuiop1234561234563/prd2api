@@ -64,4 +64,18 @@ public interface AssistantService {
      * 定时任务：清理过期会话与消息，返回处理条数
      */
     int cleanExpired();
+
+    /**
+     * 当前会话的互斥锁状态，用于前端提示“上一轮仍在处理”
+     */
+    LockState lockState(String sessionId);
+
+    /**
+     * 会话锁状态
+     *
+     * @param locked     是否被占用
+     * @param ttlSeconds 剩余有效期（秒），-1 表示未占用
+     */
+    record LockState(boolean locked, long ttlSeconds) {
+    }
 }

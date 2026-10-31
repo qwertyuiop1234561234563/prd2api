@@ -6,12 +6,18 @@ import com.dbappsecurity.prd2api.common.BizException;
 import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.HexFormat;
 import java.util.Set;
 import java.util.UUID;
 
@@ -113,8 +119,8 @@ public final class FileUtil {
     /**
      * 病毒扫描钩子：预留对接企业病毒扫描服务，返回 false 表示命中病毒
      */
-    public static boolean virusScan(byte[] bytes, String fileName) {
-        log.debug("[病毒扫描钩子] 文件={} 大小={}B，当前未接入扫描引擎，默认放行", fileName, bytes.length);
+    public static boolean virusScan(String fileName, long size) {
+        log.debug("[病毒扫描钩子] 文件={} 大小={}B，当前未接入扫描引擎，默认放行", fileName, size);
         return true;
     }
 
@@ -124,6 +130,21 @@ public final class FileUtil {
      * @return 绝对路径字符串
      */
     public static String saveLocal(String basePath, String tenantId, byte[] bytes, String suffix) {
+        try (InputStream input = new ByteArrayInputStream(bytes)) {
+            return saveLocalStreaming(basePath, tenantId, input, suffix).path();
+        } catch (IOException e) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文件落盘失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 流式落盘：边写边算 md5 与大小，避免大文件全量读入内存。
+     * <p>
+     * 同时完成魔数校验与文本二进制伪装检测，落盘后可直接按路径解析，无需再次读入 byte[]。
+     */
+    public static StoredFile saveLocalStreaming(String basePath, String tenantId,
+                                                InputStream input, String suffix) {
+        Path target = null;
         try {
             Path base = Paths.get(basePath).toAbsolutePath().normalize();
             String safeTenant = StrUtil.isBlank(tenantId)
@@ -135,14 +156,62 @@ public final class FileUtil {
                 throw new BizException(BizErrorCodeEnum.PARAM_INVALID, "非法的存储目录");
             }
             Files.createDirectories(dir);
-            Path target = dir.resolve(UUID.randomUUID().toString().replace("-", "") + "." + suffix);
-            Files.write(target, bytes);
-            return target.toAbsolutePath().toString();
+            target = dir.resolve(UUID.randomUUID().toString().replace("-", "") + "." + suffix);
+
+            boolean textFile = "md".equals(suffix) || "txt".equals(suffix);
+            byte[] head = new byte[4];
+            int headLen = 0;
+            long size = 0L;
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            try (OutputStream out = Files.newOutputStream(target,
+                    StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) {
+                    if (headLen < head.length) {
+                        int copy = Math.min(head.length - headLen, read);
+                        System.arraycopy(buffer, 0, head, headLen, copy);
+                        headLen += copy;
+                    }
+                    if (textFile) {
+                        for (int i = 0; i < read; i++) {
+                            if (buffer[i] == 0) {
+                                throw new BizException(BizErrorCodeEnum.FILE_TYPE_NOT_ALLOWED,
+                                        "文本文件中存在二进制内容");
+                            }
+                        }
+                    }
+                    digest.update(buffer, 0, read);
+                    out.write(buffer, 0, read);
+                    size += read;
+                }
+            }
+            if (size < head.length) {
+                throw new BizException(BizErrorCodeEnum.FILE_TYPE_NOT_ALLOWED, "文件内容为空或过短");
+            }
+            magicCheck(head, suffix);
+            return new StoredFile(target.toAbsolutePath().toString(),
+                    HexFormat.of().formatHex(digest.digest()), size);
         } catch (BizException e) {
+            deleteLocalQuietly(target);
             throw e;
-        } catch (IOException e) {
+        } catch (Exception e) {
+            deleteLocalQuietly(target);
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文件落盘失败: " + e.getMessage(), e);
         }
+    }
+
+    private static void deleteLocalQuietly(Path path) {
+        if (path == null) {
+            return;
+        }
+        deleteLocalQuietly(path.toAbsolutePath().toString());
+    }
+
+    /**
+     * 流式落盘结果：路径、md5、真实字节数
+     */
+    public record StoredFile(String path, String md5, long size) {
     }
 
     public static byte[] readLocal(String path) {

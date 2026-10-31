@@ -84,7 +84,8 @@ public class AssistantEvalServiceImpl implements AssistantEvalService {
         } catch (Exception e) {
             log.warn("评测用例执行失败 case={} msg={}", evalCase.id(), e.getMessage());
             return new CaseResult(evalCase.id(), evalCase.category(), evalCase.message(), false,
-                    false, false, false, List.of(), "ERROR", 0L, System.currentTimeMillis() - start,
+                    false, false, false, false, false, false, false, List.of(), "ERROR", 0L,
+                    System.currentTimeMillis() - start,
                     "执行异常：" + StrUtil.maxLength(e.getMessage(), 120));
         }
         long latency = System.currentTimeMillis() - start;
@@ -107,10 +108,19 @@ public class AssistantEvalServiceImpl implements AssistantEvalService {
                 || StrUtil.contains(outcome.reply(), evalCase.expectKeyword());
         boolean selfCheckHit = !evalCase.requireSelfCheck()
                 || steps.stream().anyMatch(step -> "SELF_CHECK".equals(step.getType()) && step.isSuccess());
-        boolean passed = toolHit && keywordHit && selfCheckHit;
+        boolean planHit = !evalCase.requirePlan()
+                || steps.stream().anyMatch(step -> "PLAN".equals(step.getType()) && step.isSuccess());
+        boolean criticHit = !evalCase.requireCritic()
+                || steps.stream().anyMatch(step -> "CRITIC".equals(step.getType()) && step.isSuccess());
+        boolean supervisorHit = !evalCase.requireSupervisor()
+                || steps.stream().anyMatch(step -> "SUPERVISOR".equals(step.getType()));
+        boolean policyHit = !evalCase.requirePolicy()
+                || steps.stream().anyMatch(step -> "POLICY".equals(step.getType()));
+        boolean passed = toolHit && keywordHit && selfCheckHit && planHit && criticHit && supervisorHit
+                && policyHit;
         return new CaseResult(evalCase.id(), evalCase.category(), lastQuestion, passed,
-                toolHit, keywordHit, selfCheckHit, actualTools, outcome.mode(), tokens, latency,
-                StrUtil.maxLength(outcome.reply(), 300));
+                toolHit, keywordHit, selfCheckHit, planHit, criticHit, supervisorHit, policyHit,
+                actualTools, outcome.mode(), tokens, latency, StrUtil.maxLength(outcome.reply(), 300));
     }
 
     private AssistantChatMessage message(String role, String content) {
@@ -125,6 +135,10 @@ public class AssistantEvalServiceImpl implements AssistantEvalService {
         int toolChecked = 0;
         int toolHitCount = 0;
         int selfCheckHitCount = 0;
+        int planHitCount = 0;
+        int criticHitCount = 0;
+        int supervisorHitCount = 0;
+        int policyHitCount = 0;
         int degraded = 0;
         long tokens = 0L;
         long latency = 0L;
@@ -139,6 +153,18 @@ public class AssistantEvalServiceImpl implements AssistantEvalService {
             if (result.selfCheckHit()) {
                 selfCheckHitCount++;
             }
+            if (result.planHit()) {
+                planHitCount++;
+            }
+            if (result.criticHit()) {
+                criticHitCount++;
+            }
+            if (result.supervisorHit()) {
+                supervisorHitCount++;
+            }
+            if (result.policyHit()) {
+                policyHitCount++;
+            }
             if ("RULE".equals(result.mode()) || "FAQ".equals(result.mode())) {
                 degraded++;
             }
@@ -148,7 +174,9 @@ public class AssistantEvalServiceImpl implements AssistantEvalService {
         int total = results.size();
         return new Report(total, passed, ratio(passed, total), ratio(toolHitCount, toolChecked),
                 ratio((int) results.stream().filter(CaseResult::keywordHit).count(), total),
-                ratio(selfCheckHitCount, total),
+                ratio(selfCheckHitCount, total), ratio(planHitCount, total),
+                ratio(criticHitCount, total), ratio(supervisorHitCount, total),
+                ratio(policyHitCount, total),
                 degraded, ratio(tokens, total), ratio(latency, total), results);
     }
 

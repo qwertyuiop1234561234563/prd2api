@@ -30,6 +30,9 @@ public class AgentStepVO {
     @Schema(description = "工具执行结果（截断展示）")
     private String result;
 
+    @Schema(description = "证据来源：知识库文档名 / 系统实时数据 / 专家子 Agent / 用户长期记忆")
+    private String source;
+
     @Schema(description = "耗时毫秒")
     private long latencyMs;
 

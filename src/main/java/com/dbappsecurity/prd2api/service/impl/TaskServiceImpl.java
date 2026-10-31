@@ -65,6 +65,8 @@ import java.util.concurrent.TimeUnit;
 public class TaskServiceImpl implements TaskService {
 
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    /** 租户清理分批大小，避免一次性加载全量任务 */
+    private static final int PURGE_BATCH_SIZE = 200;
     private static final String CONTENT_TYPE_MD = "text/markdown;charset=UTF-8";
     private static final String CONTENT_TYPE_HTML = "text/html;charset=UTF-8";
     private static final String CONTENT_TYPE_DOCX =
@@ -194,7 +196,12 @@ public class TaskServiceImpl implements TaskService {
         if (StrUtil.isNotBlank(dto.getFileMetaId())) {
             wrapper.eq(PrdTask::getFileMetaId, dto.getFileMetaId());
         }
-        wrapper.orderByDesc(PrdTask::getCreateTime);
+        // 列表只需要摘要字段，显式排除 result_markdown 大字段，避免把整份报告从数据库搬到应用内存
+        wrapper.select(PrdTask::getTaskId, PrdTask::getTenantId, PrdTask::getUserKey,
+                        PrdTask::getFileMetaId, PrdTask::getVersionNo, PrdTask::getTaskStatus,
+                        PrdTask::getProgress, PrdTask::getErrorMsg, PrdTask::getModelCode,
+                        PrdTask::getCreateTime, PrdTask::getFinishTime)
+                .orderByDesc(PrdTask::getCreateTime);
 
         Page<PrdTask> page = prdTaskMapper.selectPage(new Page<>(dto.getPageNum(), dto.getPageSize()), wrapper);
         Page<TaskVO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
@@ -400,16 +407,28 @@ public class TaskServiceImpl implements TaskService {
         if (!TenantContextUtil.isAdmin()) {
             throw new BizException(BizErrorCodeEnum.FORBIDDEN, "仅管理员可清理租户数据");
         }
-        List<PrdTask> tasks = prdTaskMapper.selectList(new LambdaQueryWrapper<PrdTask>()
-                .eq(PrdTask::getTenantId, tenantId));
-        for (PrdTask task : tasks) {
-            ragService.dropTaskIndex(task.getTaskId());
-            stringRedisTemplate.delete(RedisKeyConstant.taskContext(task.getTaskId()));
+        // 分批清理：每批删除后不再满足 tenant 条件，下一次仍取第一页即可，避免全量任务加载与大事务
+        int total = 0;
+        while (true) {
+            List<PrdTask> batch = prdTaskMapper.selectPage(new Page<>(1, PURGE_BATCH_SIZE, false),
+                            new LambdaQueryWrapper<PrdTask>()
+                                    .select(PrdTask::getTaskId)
+                                    .eq(PrdTask::getTenantId, tenantId))
+                    .getRecords();
+            if (batch.isEmpty()) {
+                break;
+            }
+            List<String> taskIds = batch.stream().map(PrdTask::getTaskId).toList();
+            for (String taskId : taskIds) {
+                ragService.dropTaskIndex(taskId);
+                stringRedisTemplate.delete(RedisKeyConstant.taskContext(taskId));
+            }
+            prdTaskMapper.deleteBatchIds(taskIds);
+            total += batch.size();
         }
-        prdTaskMapper.delete(new LambdaQueryWrapper<PrdTask>().eq(PrdTask::getTenantId, tenantId));
         fileService.deleteTenantFiles(tenantId);
-        log.info("租户数据已清理 tenantId={} 任务数={}", tenantId, tasks.size());
-        return tasks.size();
+        log.info("租户数据已清理 tenantId={} 任务数={}", tenantId, total);
+        return total;
     }
 
     /**

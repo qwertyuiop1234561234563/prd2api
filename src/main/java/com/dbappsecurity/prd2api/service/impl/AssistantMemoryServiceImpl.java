@@ -3,6 +3,7 @@ package com.dbappsecurity.prd2api.service.impl;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.crypto.digest.DigestUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
 import com.dbappsecurity.prd2api.entity.AssistantUserMemory;
 import com.dbappsecurity.prd2api.mapper.AssistantUserMemoryMapper;
@@ -17,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -91,19 +93,44 @@ public class AssistantMemoryServiceImpl implements AssistantMemoryService {
         if (facts.isEmpty()) {
             return List.of();
         }
+        List<MemoryItem> result;
         if (StrUtil.isBlank(query)) {
-            return facts.stream().limit(size)
+            result = facts.stream().limit(size)
                     .map(item -> new MemoryItem(item.getId(), item.getMemoryKey(), item.getMemoryValue(), 1.0D))
                     .toList();
+        } else {
+            List<MemoryItem> scored = new ArrayList<>(facts.size());
+            for (AssistantUserMemory fact : facts) {
+                double score = SimilarityUtil.textSimilarity(query,
+                        fact.getMemoryKey() + " " + fact.getMemoryValue());
+                scored.add(new MemoryItem(fact.getId(), fact.getMemoryKey(), fact.getMemoryValue(), score));
+            }
+            scored.sort(Comparator.comparingDouble(MemoryItem::score).reversed());
+            result = scored.stream().limit(size).toList();
         }
-        List<MemoryItem> scored = new ArrayList<>(facts.size());
-        for (AssistantUserMemory fact : facts) {
-            double score = SimilarityUtil.textSimilarity(query,
-                    fact.getMemoryKey() + " " + fact.getMemoryValue());
-            scored.add(new MemoryItem(fact.getId(), fact.getMemoryKey(), fact.getMemoryValue(), score));
+        // 命中计数是记忆治理的数据基础：长期零命中的记忆会被识别为“可能过时”，供用户清理
+        touchHitCount(result);
+        return result;
+    }
+
+    /**
+     * 召回命中计数，异常不影响主流程（计数只是治理参考，不是业务强一致数据）
+     */
+    private void touchHitCount(List<MemoryItem> items) {
+        if (items.isEmpty()) {
+            return;
         }
-        scored.sort(Comparator.comparingDouble(MemoryItem::score).reversed());
-        return scored.stream().limit(size).toList();
+        List<Long> ids = items.stream().map(MemoryItem::id).filter(Objects::nonNull).toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        try {
+            memoryMapper.update(null, new LambdaUpdateWrapper<AssistantUserMemory>()
+                    .in(AssistantUserMemory::getId, ids)
+                    .setSql("hit_count = hit_count + 1"));
+        } catch (Exception e) {
+            log.warn("记忆命中计数更新失败 msg={}", e.getMessage());
+        }
     }
 
     @Override

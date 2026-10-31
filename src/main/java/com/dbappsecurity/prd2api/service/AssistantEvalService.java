@@ -20,7 +20,8 @@ public interface AssistantEvalService {
      * 评测报告
      */
     record Report(int total, int passed, double passRate, double toolAccuracy,
-                  double keywordAccuracy, double selfCheckAccuracy,
+                  double keywordAccuracy, double selfCheckAccuracy, double planAccuracy,
+                  double criticAccuracy, double supervisorAccuracy, double policyAccuracy,
                   int degradedCount, double avgTokens, double avgLatencyMs,
                   List<CaseResult> cases) {
     }
@@ -29,7 +30,8 @@ public interface AssistantEvalService {
      * 单条用例结果
      */
     record CaseResult(String id, String category, String message, boolean passed,
-                      boolean toolHit, boolean keywordHit, boolean selfCheckHit,
+                      boolean toolHit, boolean keywordHit, boolean selfCheckHit, boolean planHit,
+                      boolean criticHit, boolean supervisorHit, boolean policyHit,
                       List<String> actualTools, String mode, long tokens, long latencyMs,
                       String reply) {
     }

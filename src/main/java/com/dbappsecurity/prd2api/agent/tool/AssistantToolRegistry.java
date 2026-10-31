@@ -3,10 +3,11 @@ package com.dbappsecurity.prd2api.agent.tool;
 import cn.hutool.core.util.StrUtil;
 import com.dbappsecurity.prd2api.constant.AssistantActionType;
 import com.dbappsecurity.prd2api.constant.AssistantIntentEnum;
-import com.dbappsecurity.prd2api.rag.KnowledgeBaseService;
 import com.dbappsecurity.prd2api.service.AssistantActionService;
 import com.dbappsecurity.prd2api.service.AssistantMemoryService;
+import com.dbappsecurity.prd2api.service.AssistantRetrievalService;
 import com.dbappsecurity.prd2api.util.AssistantIntentResolver;
+import com.dbappsecurity.prd2api.util.PiiMaskUtil;
 import com.dbappsecurity.prd2api.vo.RagChunkVO;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -44,7 +45,7 @@ public class AssistantToolRegistry {
             Map.entry("query_my_vip", "查询会员信息"),
             Map.entry("list_my_files", "查看我的文件"),
             Map.entry("query_admin_stats", "查询运营数据"),
-            Map.entry("search_knowledge", "检索平台知识库"),
+            Map.entry("search_knowledge", "检索知识库（内置 + 本租户上传）"),
             Map.entry("save_memory", "记住用户信息"),
             Map.entry("recall_memory", "召回用户记忆"),
             Map.entry("navigate_page", "打开平台页面"),
@@ -95,7 +96,7 @@ public class AssistantToolRegistry {
     private final AssistantActionService actionService;
     private final AssistantIntentResolver intentResolver;
     private final AssistantMemoryService memoryService;
-    private final KnowledgeBaseService knowledgeBaseService;
+    private final AssistantRetrievalService retrievalService;
 
     private String definitionsJson;
 
@@ -118,7 +119,8 @@ public class AssistantToolRegistry {
                 Map.of(), List.of());
         add(tools, "query_admin_stats", "查询近 7 天全平台运营数据，仅管理员可用。",
                 Map.of(), List.of());
-        add(tools, "search_knowledge", "检索平台知识库，回答上传格式、四阶段解析、导出、VIP、安全、架构等平台问题，返回带来源的片段。",
+        add(tools, "search_knowledge", "检索知识库：平台内置语料 + 本租户上传的离线文档（md/txt/docx/pdf），"
+                + "回答平台功能、上传格式、四阶段解析、导出、VIP、安全、架构以及上传文档中的业务约定，返回带来源的片段。",
                 Map.of("query", "检索关键词或用户问题"), List.of("query"));
         add(tools, "save_memory", "当用户要求记住偏好、称呼或稳定事实时写入长期记忆；key 用简短名词，value 用一句话。",
                 Map.of("key", "记忆键，如 称呼/偏好/常用项目", "value", "记忆内容"), List.of("key", "value"));
@@ -127,7 +129,8 @@ public class AssistantToolRegistry {
         add(tools, "navigate_page", "返回一个前端可点击的页面跳转动作。",
                 Map.of("page", "upload / tasks / vip / report / admin"), List.of("page"));
         add(tools, "delegate_task", "把子目标委派给领域专家子 Agent 执行。data_analyst 负责多步查询任务、额度、文件、会员数据并汇总事实；"
-                        + "doc_writer 负责检索知识库并结合用户记忆撰写周报/总结。仅当任务需要“先查多项数据再成文”或多领域组合时使用。",
+                        + "doc_writer 负责检索知识库并结合用户记忆撰写周报/总结。仅当任务需要“先查多项数据再成文”或多领域组合时使用。"
+                        + "同一轮可以多次调用本工具并行委派多个专家，系统会并发执行后再统一汇总。",
                 Map.of("expert", "data_analyst 或 doc_writer", "goal", "子目标，包含必要参数，用一句完整中文描述"),
                 List.of("expert", "goal"));
         definitionsJson = tools.toString();
@@ -260,7 +263,7 @@ public class AssistantToolRegistry {
                 case "query_my_vip" -> fromAction(actionService.execute(AssistantIntentEnum.VIP, ""));
                 case "list_my_files" -> fromAction(actionService.execute(AssistantIntentEnum.FILE_LIST, ""));
                 case "query_admin_stats" -> fromAction(actionService.execute(AssistantIntentEnum.ADMIN_STATS, ""));
-                case "search_knowledge" -> searchKnowledge(arg(args, "query"));
+                case "search_knowledge" -> searchKnowledge(arg(args, "query"), args.path("topK").asInt(3));
                 case "save_memory" -> saveMemory(args);
                 case "recall_memory" -> recallMemory(arg(args, "query"));
                 case "navigate_page" -> navigate(arg(args, "page"));
@@ -294,17 +297,23 @@ public class AssistantToolRegistry {
                 result.actionType(), result.actionLabel(), result.actionTarget());
     }
 
-    private ToolResult searchKnowledge(String query) {
+    private ToolResult searchKnowledge(String query, int topK) {
         if (StrUtil.isBlank(query)) {
             return new ToolResult(false, "缺少检索关键词", null,
                     AssistantActionType.NONE, null, null);
         }
-        List<RagChunkVO> hits = knowledgeBaseService.search(query, 3);
+        // 走修正检索：首跳置信度不足时自动改写查询补检，并回传证据是否充足
+        // topK 是内部契约修复用的扩召回参数（默认 3，最大 5），不暴露给模型自由发挥
+        AssistantRetrievalService.Retrieval retrieval = retrievalService.retrieve(query,
+                Math.min(5, Math.max(1, topK)));
+        List<RagChunkVO> hits = retrieval.chunks();
         if (hits.isEmpty()) {
-            return new ToolResult(false, "知识库没有检索到相关内容，请如实告诉用户不确定，并建议联系管理员。",
+            return new ToolResult(false, "知识库没有检索到相关内容，请如实告诉用户不确定，并建议联系管理员。"
+                    + "（" + retrieval.note() + "）",
                     null, AssistantActionType.NONE, null, null);
         }
-        StringBuilder summary = new StringBuilder("知识库检索结果：\n");
+        StringBuilder summary = new StringBuilder("知识库检索结果（")
+                .append(retrieval.note()).append("）：\n");
         for (RagChunkVO hit : hits) {
             summary.append("- 【").append(hit.getSource()).append("】")
                     .append(StrUtil.maxLength(hit.getContent(), 400))
@@ -312,12 +321,15 @@ public class AssistantToolRegistry {
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("hits", hits);
+        data.put("retrieval", retrieval.note());
+        data.put("sufficient", retrieval.sufficient());
         return new ToolResult(true, summary.toString(), data, AssistantActionType.NONE, null, null);
     }
 
     private ToolResult saveMemory(JsonNode args) {
         String key = arg(args, "key");
-        String value = arg(args, "value");
+        // 长期记忆会长期留存，写入前先做 PII 脱敏，避免手机号/邮箱等敏感信息落库
+        String value = PiiMaskUtil.mask(arg(args, "value"));
         AssistantMemoryService.MemoryItem item = memoryService.save(key, value, "AGENT");
         if (item == null) {
             return new ToolResult(false, "记忆键和内容不能为空", null,

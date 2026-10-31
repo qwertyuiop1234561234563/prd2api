@@ -13,7 +13,11 @@ import org.apache.poi.xwpf.usermodel.XWPFTableCell;
 import org.apache.poi.xwpf.usermodel.XWPFTableRow;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * 文档解析工具：md / txt / docx / pdf，统一输出纯文本
@@ -33,27 +37,70 @@ public final class DocParseUtil {
         return clean(raw);
     }
 
-    private static String parseDocx(byte[] bytes) {
-        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes))) {
-            StringBuilder builder = new StringBuilder();
-            for (XWPFParagraph paragraph : document.getParagraphs()) {
-                if (StrUtil.isNotBlank(paragraph.getText())) {
-                    builder.append(paragraph.getText()).append('\n');
-                }
-            }
-            for (XWPFTable table : document.getTables()) {
-                for (XWPFTableRow row : table.getRows()) {
-                    StringBuilder line = new StringBuilder();
-                    for (XWPFTableCell cell : row.getTableCells()) {
-                        line.append(cell.getText()).append(" | ");
-                    }
-                    builder.append(line).append('\n');
-                }
-            }
-            return builder.toString();
+    /**
+     * 按文件路径解析：docx/pdf 直接从流读取，避免大文件整体载入内存
+     */
+    public static String parse(Path path, String suffix) {
+        String raw = switch (suffix) {
+            case "docx" -> parseDocx(path);
+            case "pdf" -> parsePdf(path);
+            default -> readText(path);
+        };
+        return clean(raw);
+    }
+
+    private static String parseDocx(Path path) {
+        try (InputStream input = Files.newInputStream(path);
+             XWPFDocument document = new XWPFDocument(input)) {
+            return parseDocx(document);
         } catch (Exception e) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "docx 解析失败: " + e.getMessage(), e);
         }
+    }
+
+    private static String parsePdf(Path path) {
+        try (PDDocument document = PDDocument.load(path.toFile())) {
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setSortByPosition(true);
+            return stripper.getText(document);
+        } catch (Exception e) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "pdf 解析失败: " + e.getMessage(), e);
+        }
+    }
+
+    private static String readText(Path path) {
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文本读取失败: " + e.getMessage(), e);
+        }
+    }
+
+    private static String parseDocx(byte[] bytes) {
+        try (XWPFDocument document = new XWPFDocument(new ByteArrayInputStream(bytes))) {
+            return parseDocx(document);
+        } catch (Exception e) {
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "docx 解析失败: " + e.getMessage(), e);
+        }
+    }
+
+    private static String parseDocx(XWPFDocument document) {
+        StringBuilder builder = new StringBuilder();
+        for (XWPFParagraph paragraph : document.getParagraphs()) {
+            if (StrUtil.isNotBlank(paragraph.getText())) {
+                builder.append(paragraph.getText()).append('\n');
+            }
+        }
+        for (XWPFTable table : document.getTables()) {
+            for (XWPFTableRow row : table.getRows()) {
+                StringBuilder line = new StringBuilder();
+                for (XWPFTableCell cell : row.getTableCells()) {
+                    line.append(cell.getText()).append(" | ");
+                }
+                builder.append(line).append('\n');
+            }
+        }
+        return builder.toString();
     }
 
     private static String parsePdf(byte[] bytes) {

@@ -206,6 +206,8 @@ public class CouponServiceImpl implements CouponService {
 
     @Override
     public CouponVO create(CouponCreateDTO dto) {
+        // 发券属于运营管理操作，仅管理员可执行（拦截器之外再兜底一次）
+        TenantContextUtil.requireAdmin();
         VipPlan plan = vipPlanMapper.selectById(dto.getPlanCode());
         if (plan == null || plan.getStatus() == null || plan.getStatus() != 1 || !plan.grantable()) {
             throw new BizException(BizErrorCodeEnum.VIP_PLAN_INVALID, "套餐不存在或已下架");
@@ -260,6 +262,7 @@ public class CouponServiceImpl implements CouponService {
 
     @Override
     public void offline(Long couponId) {
+        TenantContextUtil.requireAdmin();
         Coupon coupon = couponMapper.selectById(couponId);
         if (coupon == null) {
             throw new BizException(BizErrorCodeEnum.COUPON_INVALID, "优惠券不存在");

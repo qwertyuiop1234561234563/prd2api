@@ -5,6 +5,8 @@ import com.dbappsecurity.prd2api.constant.BizErrorCodeEnum;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -63,6 +65,27 @@ class FileUtilTest {
         FileUtil.magicCheck("%PDF-1.7".getBytes(StandardCharsets.UTF_8), "pdf");
         FileUtil.magicCheck(new byte[]{'P', 'K', 3, 4}, "docx");
         FileUtil.magicCheck("正常文本".getBytes(StandardCharsets.UTF_8), "md");
+    }
+
+    @Test
+    void saveLocalStreamingShouldComputeMd5AndSize() throws Exception {
+        byte[] content = "hello".getBytes(StandardCharsets.UTF_8);
+        try (InputStream input = new ByteArrayInputStream(content)) {
+            FileUtil.StoredFile stored = FileUtil.saveLocalStreaming(tempDir.toString(), "t1", input, "txt");
+            assertEquals("5d41402abc4b2a76b9719d911017c592", stored.md5());
+            assertEquals(content.length, stored.size());
+            assertArrayEquals(content, Files.readAllBytes(Paths.get(stored.path())));
+        }
+    }
+
+    @Test
+    void saveLocalStreamingShouldRejectBinaryDisguisedAsText() {
+        try (InputStream input = new ByteArrayInputStream(new byte[]{'a', 'b', 0, 'd'})) {
+            assertThrows(BizException.class,
+                    () -> FileUtil.saveLocalStreaming(tempDir.toString(), "t1", input, "txt"));
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
     }
 
     @Test

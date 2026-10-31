@@ -55,6 +55,8 @@ public class FileServiceImpl implements FileService {
     private static final double SIMILAR_THRESHOLD = 0.92D;
     private static final int SIMILAR_CANDIDATE_SIZE = 20;
     private static final long TEXT_CACHE_DAYS = 7L;
+    /** 批量处理大小：清理/遍历类操作分页查询，避免一次性加载全量数据 */
+    private static final int BATCH_SIZE = 200;
 
     private final FileMetaMapper fileMetaMapper;
     private final PrdTaskMapper prdTaskMapper;
@@ -73,6 +75,8 @@ public class FileServiceImpl implements FileService {
                 properties.getLimit().getUploadPerMinute());
 
         Entry entry = null;
+        FileUtil.StoredFile stored = null;
+        boolean keepStored = false;
         try {
             entry = SphU.entry(SentinelConfig.RES_UPLOAD);
             if (file == null || file.isEmpty()) {
@@ -85,18 +89,24 @@ public class FileServiceImpl implements FileService {
             }
             String fileName = FileUtil.sanitizeFileName(file.getOriginalFilename());
             String suffix = FileUtil.checkSuffix(fileName);
-            byte[] bytes;
+            String storageMode = StrUtil.blankToDefault(properties.getStorage().getMode(), STORAGE_LOCAL);
+            if (!STORAGE_LOCAL.equalsIgnoreCase(storageMode)) {
+                // 预留对象存储适配点：接入 OSS/S3 SDK 后在此实现上传，返回对象 key
+                throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
+                        "当前存储模式为 " + storageMode + "，对象存储适配器尚未接入，请设置 prd2api.storage.mode=local");
+            }
+            // 流式落盘：边写边算 md5/大小并做魔数校验，避免大文件整体读入内存
             try {
-                bytes = file.getBytes();
+                stored = FileUtil.saveLocalStreaming(properties.getStorage().getLocalPath(), tenantId,
+                        file.getInputStream(), suffix);
             } catch (IOException e) {
                 throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文件读取失败", e);
             }
-            FileUtil.magicCheck(bytes, suffix);
-            if (!FileUtil.virusScan(bytes, fileName)) {
+            if (!FileUtil.virusScan(fileName, stored.size())) {
                 throw new BizException(BizErrorCodeEnum.FILE_TYPE_NOT_ALLOWED, "文件未通过病毒扫描");
             }
 
-            String md5 = FileUtil.md5(bytes);
+            String md5 = stored.md5();
             FileMeta exists = fileMetaMapper.selectByTenantAndMd5(tenantId, md5);
             if (exists != null) {
                 log.info("文件 md5 去重命中 tenantId={} md5={}", tenantId, md5);
@@ -104,7 +114,7 @@ public class FileServiceImpl implements FileService {
             }
 
             // 解析文本并缓存，供任务解析与相似度查重复用
-            String text = DocParseUtil.parse(bytes, suffix);
+            String text = DocParseUtil.parse(Paths.get(stored.path()), suffix);
             if (StrUtil.isBlank(text)) {
                 throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文档解析内容为空，请检查文件是否可读");
             }
@@ -113,14 +123,14 @@ public class FileServiceImpl implements FileService {
             cacheText(md5, text);
             SimilarResult similar = findSimilarDocument(tenantId, text, md5);
 
-            String storePath = store(bytes, tenantId, suffix);
+            String storePath = stored.path();
             FileMeta archived = fileMetaMapper.selectAnyByTenantAndMd5(tenantId, md5);
             FileMeta saved;
             if (archived != null) {
                 // 同 md5 的历史记录已被软删除：复活该记录并指向本次写入的副本，
                 // 否则唯一索引仍包含已删除行，重复上传同一内容会直接报唯一键冲突
                 int revived = fileMetaMapper.reviveFileMeta(archived.getFileMetaId(),
-                        fileName, suffix, storePath, file.getSize());
+                        fileName, suffix, storePath, stored.size());
                 if (revived == 0) {
                     // 已被并发请求复活或仍是有效记录：复用现有记录并清理本次副本
                     FileMeta active = fileMetaMapper.selectByTenantAndMd5(tenantId, md5);
@@ -133,7 +143,7 @@ public class FileServiceImpl implements FileService {
                 archived.setFileName(fileName);
                 archived.setFileSuffix(suffix);
                 archived.setFileStorePath(storePath);
-                archived.setFileSize(file.getSize());
+                archived.setFileSize(stored.size());
                 archived.setDeleted(0);
                 archived.setCreateTime(LocalDateTime.now());
                 saved = archived;
@@ -146,7 +156,7 @@ public class FileServiceImpl implements FileService {
                 meta.setFileSuffix(suffix);
                 meta.setFileStorePath(storePath);
                 meta.setFileMd5(md5);
-                meta.setFileSize(file.getSize());
+                meta.setFileSize(stored.size());
                 try {
                     fileMetaMapper.insert(meta);
                 } catch (DuplicateKeyException e) {
@@ -163,6 +173,7 @@ public class FileServiceImpl implements FileService {
                 saved = meta;
             }
 
+            keepStored = true;
             FileUploadVO vo = FileUploadVO.from(saved, false);
             if (similar != null) {
                 vo.setSimilarFileMetaId(similar.meta().getFileMetaId());
@@ -173,6 +184,12 @@ public class FileServiceImpl implements FileService {
             return vo;
         } catch (BlockException e) {
             throw new BizException(BizErrorCodeEnum.RATE_LIMITED, "上传请求过多，请稍后重试");
+        } catch (RuntimeException e) {
+            // 落盘成功但后续解析/入库失败：清理本次副本，避免产生孤儿文件
+            if (stored != null && !keepStored) {
+                FileUtil.deleteLocalQuietly(stored.path());
+            }
+            throw e;
         } finally {
             if (entry != null) {
                 entry.exit();
@@ -207,8 +224,7 @@ public class FileServiceImpl implements FileService {
         if (StrUtil.isNotBlank(cached)) {
             return cached;
         }
-        byte[] bytes = FileUtil.readLocal(fileMeta.getFileStorePath());
-        String text = DocParseUtil.parse(bytes, fileMeta.getFileSuffix());
+        String text = DocParseUtil.parse(Paths.get(fileMeta.getFileStorePath()), fileMeta.getFileSuffix());
         if (StrUtil.isBlank(text)) {
             throw new BizException(BizErrorCodeEnum.BIZ_ERROR, "文档解析内容为空，请检查文件是否可读");
         }
@@ -237,30 +253,49 @@ public class FileServiceImpl implements FileService {
     public int cleanExpired() {
         int expireDay = Math.max(1, properties.getClean().getExpireDay());
         LocalDateTime expireBefore = LocalDateTime.now().minusDays(expireDay);
-        List<FileMeta> expiredFiles = fileMetaMapper.selectExpired(expireBefore);
-        for (FileMeta meta : expiredFiles) {
-            dropFileVectors(meta.getTenantId(), meta.getFileMetaId());
-            FileUtil.deleteLocalQuietly(meta.getFileStorePath());
-            fileMetaMapper.deleteById(meta.getFileMetaId());
-            stringRedisTemplate.delete(RedisKeyConstant.docText(meta.getFileMd5()));
+        // 分批清理：每次只取一页，删除后逻辑删除条件自然排除，避免一次性把大量文件捞进内存
+        int total = 0;
+        while (true) {
+            List<FileMeta> batch = fileMetaMapper.selectPage(new Page<>(1, BATCH_SIZE, false),
+                    new LambdaQueryWrapper<FileMeta>().lt(FileMeta::getCreateTime, expireBefore))
+                    .getRecords();
+            if (batch.isEmpty()) {
+                break;
+            }
+            for (FileMeta meta : batch) {
+                dropFileVectors(meta.getTenantId(), meta.getFileMetaId());
+                FileUtil.deleteLocalQuietly(meta.getFileStorePath());
+                fileMetaMapper.deleteById(meta.getFileMetaId());
+                stringRedisTemplate.delete(RedisKeyConstant.docText(meta.getFileMd5()));
+            }
+            total += batch.size();
         }
-        if (!expiredFiles.isEmpty()) {
-            log.info("清理过期文件 {} 个，阈值={} 天", expiredFiles.size(), expireDay);
+        if (total > 0) {
+            log.info("清理过期文件 {} 个，阈值={} 天", total, expireDay);
         }
-        return expiredFiles.size();
+        return total;
     }
 
     /**
      * 清理文件关联任务的向量集合，避免过期向量长期占用 Chroma 存储
      */
     private void dropFileVectors(String tenantId, String fileMetaId) {
-        List<PrdTask> tasks = prdTaskMapper.selectList(new LambdaQueryWrapper<PrdTask>()
-                .select(PrdTask::getTaskId)
-                .eq(PrdTask::getTenantId, tenantId)
-                .eq(PrdTask::getFileMetaId, fileMetaId));
-        for (PrdTask task : tasks) {
-            ragService.dropTaskIndex(task.getTaskId());
-            stringRedisTemplate.delete(RedisKeyConstant.taskContext(task.getTaskId()));
+        int pageNo = 1;
+        while (true) {
+            List<PrdTask> tasks = prdTaskMapper.selectPage(new Page<>(pageNo, BATCH_SIZE, false),
+                    new LambdaQueryWrapper<PrdTask>()
+                            .select(PrdTask::getTaskId)
+                            .eq(PrdTask::getTenantId, tenantId)
+                            .eq(PrdTask::getFileMetaId, fileMetaId))
+                    .getRecords();
+            for (PrdTask task : tasks) {
+                ragService.dropTaskIndex(task.getTaskId());
+                stringRedisTemplate.delete(RedisKeyConstant.taskContext(task.getTaskId()));
+            }
+            if (tasks.size() < BATCH_SIZE) {
+                break;
+            }
+            pageNo++;
         }
     }
 
@@ -306,24 +341,24 @@ public class FileServiceImpl implements FileService {
 
     @Override
     public int deleteTenantFiles(String tenantId) {
-        List<FileMeta> files = fileMetaMapper.selectByTenantId(tenantId);
-        for (FileMeta meta : files) {
-            FileUtil.deleteLocalQuietly(meta.getFileStorePath());
-            stringRedisTemplate.delete(RedisKeyConstant.docText(meta.getFileMd5()));
+        // 分批清理：每页处理后记录被逻辑删除，下一次仍取第一页即可，避免一次加载租户全部文件
+        int total = 0;
+        while (true) {
+            List<FileMeta> batch = fileMetaMapper.selectPage(new Page<>(1, BATCH_SIZE, false),
+                    new LambdaQueryWrapper<FileMeta>().eq(FileMeta::getTenantId, tenantId))
+                    .getRecords();
+            if (batch.isEmpty()) {
+                break;
+            }
+            for (FileMeta meta : batch) {
+                FileUtil.deleteLocalQuietly(meta.getFileStorePath());
+                stringRedisTemplate.delete(RedisKeyConstant.docText(meta.getFileMd5()));
+                fileMetaMapper.deleteById(meta.getFileMetaId());
+            }
+            total += batch.size();
         }
-        fileMetaMapper.delete(new LambdaQueryWrapper<FileMeta>().eq(FileMeta::getTenantId, tenantId));
-        log.info("清理租户文件 tenantId={} 数量={}", tenantId, files.size());
-        return files.size();
-    }
-
-    private String store(byte[] bytes, String tenantId, String suffix) {
-        String mode = StrUtil.blankToDefault(properties.getStorage().getMode(), STORAGE_LOCAL);
-        if (STORAGE_LOCAL.equalsIgnoreCase(mode)) {
-            return FileUtil.saveLocal(properties.getStorage().getLocalPath(), tenantId, bytes, suffix);
-        }
-        // 预留对象存储适配点：接入 OSS/S3 SDK 后在此实现上传，返回对象 key
-        throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
-                "当前存储模式为 " + mode + "，对象存储适配器尚未接入，请设置 prd2api.storage.mode=local");
+        log.info("清理租户文件 tenantId={} 数量={}", tenantId, total);
+        return total;
     }
 
     private void cacheText(String md5, String text) {
@@ -352,16 +387,26 @@ public class FileServiceImpl implements FileService {
                 .ne(FileMeta::getFileMd5, md5)
                 .orderByDesc(FileMeta::getCreateTime)
                 .last("limit " + SIMILAR_CANDIDATE_SIZE));
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        // 一次 multiGet 批量取候选文本，避免 20 次 Redis 往返
+        List<String> keys = candidates.stream()
+                .map(candidate -> RedisKeyConstant.docText(candidate.getFileMd5()))
+                .toList();
+        List<String> cachedTexts = stringRedisTemplate.opsForValue().multiGet(keys);
+        if (cachedTexts == null) {
+            return null;
+        }
         SimilarResult best = null;
-        for (FileMeta candidate : candidates) {
-            String cached = stringRedisTemplate.opsForValue()
-                    .get(RedisKeyConstant.docText(candidate.getFileMd5()));
+        for (int i = 0; i < candidates.size(); i++) {
+            String cached = cachedTexts.get(i);
             if (StrUtil.isBlank(cached)) {
                 continue;
             }
             double score = SimilarityUtil.documentSimilarity(text, cached);
             if (score >= SIMILAR_THRESHOLD && (best == null || score > best.score())) {
-                best = new SimilarResult(candidate, score);
+                best = new SimilarResult(candidates.get(i), score);
             }
         }
         return best;

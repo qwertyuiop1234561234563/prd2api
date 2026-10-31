@@ -19,6 +19,9 @@ public final class AssistantEvalCaseConstant {
                     List.of("list_my_files"), List.of(), null),
             new EvalCase("knowledge", "知识库", "四阶段解析是怎么做的？",
                     List.of("search_knowledge"), List.of(), "解析"),
+            // 检索鲁棒性：口语化、代词化的问法置信度偏低，需靠改写补检才能稳定召回正确文档
+            new EvalCase("knowledge-vague", "知识库", "那个把需求文档分好几轮处理的东西，每一轮分别产出哪些材料？",
+                    List.of("search_knowledge"), List.of(), "业务理解"),
             new EvalCase("memory-write", "记忆", "记住我导出报告喜欢用 Markdown",
                     List.of("save_memory"), List.of(), null),
             new EvalCase("danger-cancel", "安全", "帮我取消任务 76711f547c1e4a0f9b2d3e4f5a6b7c8d",
@@ -33,11 +36,25 @@ public final class AssistantEvalCaseConstant {
                     List.of("那我的额度还剩多少？"), true),
             // 接地：工具型答复必须通过自检（数值有出处、无未执行的写操作声明）
             new EvalCase("grounding", "接地自检", "我的额度还剩多少？",
-                    List.of("query_my_quota"), List.of(), null, List.of(), true),
+                    List.of("query_my_quota"), List.of(), null, List.of(), true, false, false, true, false),
             // 子 Agent 委派：复合任务应交给专家，而不是父 Agent 挨个调工具
             new EvalCase("delegate", "子 Agent 委派",
                     "请委派数据分析师，帮我查一下我的任务和今日额度，然后汇总成一段结论给我",
-                    List.of("delegate_task"), List.of(), null));
+                    List.of("delegate_task"), List.of(), null),
+            // 计划编排：复合问题应先产出 PLAN 轨迹，再按计划逐步调用工具
+            new EvalCase("plan-compound", "计划编排",
+                    "帮我先查任务列表，再查额度，然后汇总成一段说明",
+                    List.of("query_my_tasks", "query_my_quota"), List.of(), null,
+                    List.of(), false, true),
+            // Supervisor 并行：同一轮委派两个专家，必须产出 fan-out/fan-in 汇总轨迹
+            new EvalCase("supervisor-parallel", "Supervisor 并行",
+                    "请在同一轮并行委派两个专家：数据分析师查我的任务列表和今日额度；"
+                            + "文档撰写专家检索平台知识库，说明四阶段解析。两个专家的结论都要汇总给我。",
+                    List.of("delegate_task"), List.of(), null, List.of(), false, false, true, false, false),
+            // 经验策略：同一问法的下一轮改述应命中历史“问法 → 工具”先验，产出 POLICY 轨迹
+            new EvalCase("policy-reuse", "经验策略", "我上传过哪些文件？",
+                    List.of("list_my_files"), List.of(), null,
+                    List.of("帮我看看我上传过哪些文件"), false, false, false, false, true));
 
     private AssistantEvalCaseConstant() {
     }
@@ -50,14 +67,34 @@ public final class AssistantEvalCaseConstant {
      * @param expectKeyword    答复中必须包含的关键信息（空表示不校验）
      * @param followUps        后续轮次问题，断言只针对最后一轮，验证多轮上下文
      * @param requireSelfCheck 是否要求最终轮产生“接地自检通过”步骤
+     * @param requirePlan      是否要求产生 PLAN 计划轨迹（复合任务计划编排）
+     * @param requireSupervisor 是否要求产生 SUPERVISOR 并行汇总轨迹
+     * @param requireCritic    是否要求产生 CRITIC 评审轨迹（Actor-Critic 质量门禁）
+     * @param requirePolicy    是否要求产生 POLICY 经验策略轨迹（历史工具选择先验命中）
      */
     public record EvalCase(String id, String category, String message,
                            List<String> expectTools, List<String> forbidTools, String expectKeyword,
-                           List<String> followUps, boolean requireSelfCheck) {
+                           List<String> followUps, boolean requireSelfCheck, boolean requirePlan,
+                           boolean requireSupervisor, boolean requireCritic, boolean requirePolicy) {
 
         public EvalCase(String id, String category, String message,
                         List<String> expectTools, List<String> forbidTools, String expectKeyword) {
-            this(id, category, message, expectTools, forbidTools, expectKeyword, List.of(), false);
+            this(id, category, message, expectTools, forbidTools, expectKeyword,
+                    List.of(), false, false, false, false, false);
+        }
+
+        public EvalCase(String id, String category, String message,
+                        List<String> expectTools, List<String> forbidTools, String expectKeyword,
+                        List<String> followUps, boolean requireSelfCheck) {
+            this(id, category, message, expectTools, forbidTools, expectKeyword,
+                    followUps, requireSelfCheck, false, false, false, false);
+        }
+
+        public EvalCase(String id, String category, String message,
+                        List<String> expectTools, List<String> forbidTools, String expectKeyword,
+                        List<String> followUps, boolean requireSelfCheck, boolean requirePlan) {
+            this(id, category, message, expectTools, forbidTools, expectKeyword,
+                    followUps, requireSelfCheck, requirePlan, false, false, false);
         }
     }
 }

@@ -199,6 +199,7 @@ class CouponServiceImplTest {
 
     @Test
     void shouldRejectCreateWhenPerUserLimitGreaterThanStock() {
+        TenantContextUtil.set("u1", "t1", "admin", TenantContextUtil.ADMIN_ROLE);
         when(vipPlanMapper.selectById("BASIC")).thenReturn(plan("BASIC", 30));
         CouponCreateDTO dto = new CouponCreateDTO();
         dto.setCouponName("新人礼");
@@ -214,6 +215,7 @@ class CouponServiceImplTest {
 
     @Test
     void shouldCreateCouponAndWarmUpStock() {
+        TenantContextUtil.set("u1", "t1", "admin", TenantContextUtil.ADMIN_ROLE);
         when(vipPlanMapper.selectById("BASIC")).thenReturn(plan("BASIC", 30));
         when(couponMapper.insert(any(Coupon.class))).thenAnswer(invocation -> {
             Coupon saved = invocation.getArgument(0);
@@ -234,6 +236,28 @@ class CouponServiceImplTest {
         assertEquals(100, vo.getTotalStock());
         assertEquals(100, vo.getRemainStock());
         verify(couponClaimUtil).initStock(eq(5L), eq(100), anyLong());
+    }
+
+    @Test
+    void shouldRejectCreateByNonAdmin() {
+        // 发券属于运营管理操作，普通用户即使绕过 Controller 也被服务层拦截
+        CouponCreateDTO dto = new CouponCreateDTO();
+        dto.setCouponName("新人礼");
+        dto.setPlanCode("BASIC");
+        dto.setTotalStock(10);
+        dto.setPerUserLimit(1);
+
+        BizException e = assertThrows(BizException.class, () -> couponService.create(dto));
+
+        assertEquals(403, e.getCode());
+        verify(vipPlanMapper, never()).selectById(anyString());
+        verify(couponMapper, never()).insert(any(Coupon.class));
+    }
+
+    @Test
+    void shouldRejectOfflineByNonAdmin() {
+        assertThrows(BizException.class, () -> couponService.offline(1L));
+        verify(couponMapper, never()).selectById(1L);
     }
 
     private Coupon activeCoupon(Long couponId, String planCode, int totalStock, int perUserLimit) {

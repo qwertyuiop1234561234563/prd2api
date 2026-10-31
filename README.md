@@ -57,7 +57,7 @@ ALTER TABLE prd_task_cache ADD UNIQUE KEY uk_cache_key (tenant_id, file_md5, mod
 ```
 
 2. Redis 6.2+
-3. Chroma 服务：`docker run -p 8000:8000 chromadb/chroma`（不可用时自动降级本地召回）
+3. Chroma 服务：`docker run -p 8000:8000 chromadb/chroma`，或用本地 Python `chroma run --host 127.0.0.1 --port 8000 --path ./data/chroma`；1.0+ 使用 `/api/v2`，0.4.x 自动回落 `/api/v1`，服务不可达时才降级本地召回
 4. OpenAI 兼容的 LLM / Embedding 接口
 
 登录与 VIP 相关的 `sys_user`、`vip_plan`、`user_vip`、`redeem_code`、`user_daily_usage` 均由脚本中 `CREATE TABLE IF NOT EXISTS` 与 `INSERT IGNORE` 幂等创建并写入 FREE/BASIC/PRO 三档种子套餐，重复执行安全。
@@ -129,6 +129,7 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 - `prd2api.security.require-login=true` 时只接受登录令牌，Header 透传返回 401（生产建议开启）
 - `prd2api.security.require-identity=true` 时缺失 `X-Tenant-Id` / `X-User-Key` 直接 401
 - 角色仅 ADMIN / USER 两级；管理员账号可通过 `POST /api/admin/vip/user` 创建
+- `/api/knowledge/**` 为知识库管理接口，与 `/api/admin/**` 一样仅 ADMIN 可访问（普通用户返回 403）；Agent 对话内部检索走服务层，不受该限制
 - 跨域来源由 `prd2api.security.allowed-origins` 控制，默认 `*` 仅供开发，生产务必配置具体域名
 - 下载导出文件使用一次性 `exportToken`，有效期默认 300 秒，不依赖上述身份
 
@@ -208,6 +209,7 @@ java -jar target/prd2api.jar --spring.profiles.active=dev
 | GET | `/api/admin/coupon/page` | 优惠券分页，按状态 / 套餐 / 名称过滤（ADMIN） |
 | DELETE | `/api/admin/coupon/{couponId}` | 优惠券下架，仅停止新领取（ADMIN） |
 | GET | `/api/admin/coupon/{couponId}/claims` | 某批优惠券的领取记录（ADMIN） |
+| GET/POST/PUT/DELETE | `/api/knowledge/**` | 知识库管理：上传、分页、分段预览、启停、重建、删除、检索测试（ADMIN） |
 
 ## Redis Key 规范
 
@@ -247,5 +249,5 @@ prd2api:coupon:{couponId}:user:{userId}
 ## 已知边界
 
 1. 对象存储模式当前仅预留适配点，需接入 OSS/S3 SDK 后启用（默认 `local`）
-2. Chroma 通过 HTTP API 调用（未引入第三方 jar），接口版本差异请按实际服务调整 `/api/v1`
+2. Chroma 通过 HTTP API 调用（未引入第三方 jar），客户端启动后自动探测版本：1.0+ 走 `/api/v2`，老版本回落 `/api/v1`
 3. 未配置 `LLM_API_KEY` 时任务会明确失败并提示，不影响上传、配额等其它能力

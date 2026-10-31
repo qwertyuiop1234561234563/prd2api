@@ -58,6 +58,18 @@ public class AssistantReplyVO {
     @Schema(description = "接地自检未通过的说明，通过时为 null")
     private String groundingNote;
 
+    @Schema(description = "答复证据链：每条结论对应的知识来源或系统数据")
+    private List<AssistantCitationVO> citations;
+
+    @Schema(description = "证据引用覆盖率：被答复实际引用的证据数 / 可用证据数")
+    private double citationCoverage;
+
+    @Schema(description = "被答复实际引用的证据条数")
+    private int citationVerified;
+
+    @Schema(description = "本轮可用证据总条数")
+    private int citationTotal;
+
     @Schema(description = "回复时间")
     private LocalDateTime time;
 

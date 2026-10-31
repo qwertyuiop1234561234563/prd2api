@@ -19,6 +19,7 @@ package com.dbappsecurity.prd2api.constant;
  * prd2api:coupon:{couponId}:stock         # 优惠券剩余库存（Lua 原子扣减）
  * prd2api:coupon:{couponId}:user:{userId} # 用户已领取数量（Lua 原子累加）
  * prd2api:limit:assistant:{tenant}:{user} # 桌面助手提问限流（滑动窗口）
+ * prd2api:limit:knowledge:{tenant}:{user} # 知识库上传限流（滑动窗口）
  * prd2api:assistant:clean:lock            # 助手会话过期清理分布式锁
  * </pre>
  */
@@ -45,6 +46,8 @@ public final class RedisKeyConstant {
     public static final String COUPON_PREFIX = "prd2api:coupon:";
     /** 桌面助手提问限流 */
     public static final String LIMIT_ASSISTANT_PREFIX = "prd2api:limit:assistant:";
+    /** 知识库上传限流 */
+    public static final String LIMIT_KNOWLEDGE_PREFIX = "prd2api:limit:knowledge:";
     /** 助手会话过期清理分布式锁 */
     public static final String ASSISTANT_CLEAN_LOCK = "prd2api:assistant:clean:lock";
     /** 助手知识库是否已完成向量化索引 */
@@ -59,6 +62,30 @@ public final class RedisKeyConstant {
     public static final String ASSISTANT_CTX_SUMMARY_PREFIX = "prd2api:assistant:ctx:summary:";
     /** 语义缓存（按租户+用户隔离，只缓存知识型问答） */
     public static final String ASSISTANT_SEMCACHE_PREFIX = "prd2api:assistant:semcache:";
+    /** Agent 执行中断标记（按租户+用户隔离，值为会话 ID 或 * 表示取消当前运行） */
+    public static final String ASSISTANT_CANCEL_PREFIX = "prd2api:assistant:cancel:";
+    /** Agent 断点续跑检查点（按租户+用户+会话隔离） */
+    public static final String ASSISTANT_CHECKPOINT_PREFIX = "prd2api:assistant:checkpoint:";
+    /** 工具选择经验策略（按租户+用户隔离） */
+    public static final String ASSISTANT_TOOL_POLICY_PREFIX = "prd2api:assistant:policy:";
+    /** 失败反思教训（按租户+用户隔离，字段为工具名） */
+    public static final String ASSISTANT_REFLECTION_PREFIX = "prd2api:assistant:reflection:";
+    /** 失败样本回归用例（按租户+用户隔离，字段为用例 ID） */
+    public static final String ASSISTANT_FAILURE_CASE_PREFIX = "prd2api:assistant:failurecase:";
+    /** 用户对助手答复的反馈（按租户+用户隔离，字段为反馈 ID） */
+    public static final String ASSISTANT_FEEDBACK_PREFIX = "prd2api:assistant:feedback:";
+    /** 只读工具结果缓存（按租户+用户+工具+参数隔离，短 TTL） */
+    public static final String ASSISTANT_TOOL_CACHE_PREFIX = "prd2api:assistant:tool:cache:";
+    /** 工具级滑动窗口限流（按租户+用户+工具隔离，ZSET 存调用时间戳） */
+    public static final String ASSISTANT_TOOL_RATE_PREFIX = "prd2api:assistant:tool:rate:";
+    /** 工具调用样例沉淀（按租户+用户隔离，缓存注入提示词的 few-shot 块） */
+    public static final String ASSISTANT_TOOL_EXAMPLE_PREFIX = "prd2api:assistant:tool:example:";
+    /** 工具熔断状态快照（按租户+用户隔离，缓存各工具的 CLOSED/OPEN/HALF_OPEN） */
+    public static final String ASSISTANT_TOOL_CIRCUIT_PREFIX = "prd2api:assistant:tool:circuit:";
+    /** 半开探测票据（按租户+用户+工具隔离，冷却周期内只允许一次探测） */
+    public static final String ASSISTANT_TOOL_CIRCUIT_PROBE_PREFIX = "prd2api:assistant:tool:circuit:probe:";
+    /** 会话互斥锁（按租户+用户+会话隔离，同一会话同一时刻只允许一轮对话） */
+    public static final String ASSISTANT_CHAT_LOCK_PREFIX = "prd2api:assistant:chat:lock:";
 
     public static String taskLock(String taskId) {
         return TASK_LOCK_PREFIX + taskId;
@@ -126,5 +153,48 @@ public final class RedisKeyConstant {
 
     public static String limitAssistant(String tenantId, String userKey) {
         return LIMIT_ASSISTANT_PREFIX + tenantId + ":" + userKey;
+    }
+
+    /**
+     * 工具级限流 key：租户 + 用户 + 工具，防止单个用户刷爆某个下游工具
+     */
+    public static String limitAssistantTool(String tenantId, String userKey, String toolName) {
+        return ASSISTANT_TOOL_RATE_PREFIX + tenantId + ":" + userKey + ":" + toolName;
+    }
+
+    public static String limitKnowledge(String tenantId, String userKey) {
+        return LIMIT_KNOWLEDGE_PREFIX + tenantId + ":" + userKey;
+    }
+
+    public static String assistantCancel(String tenantId, String userKey) {
+        return ASSISTANT_CANCEL_PREFIX + tenantId + ":" + userKey;
+    }
+
+    /**
+     * 工具样例缓存 key：租户 + 用户
+     */
+    public static String assistantToolExample(String tenantId, String userKey) {
+        return ASSISTANT_TOOL_EXAMPLE_PREFIX + tenantId + ":" + userKey;
+    }
+
+    /**
+     * 工具熔断快照 key：租户 + 用户
+     */
+    public static String assistantCircuit(String tenantId, String userKey) {
+        return ASSISTANT_TOOL_CIRCUIT_PREFIX + tenantId + ":" + userKey;
+    }
+
+    /**
+     * 半开探测票据 key：租户 + 用户 + 工具
+     */
+    public static String assistantCircuitProbe(String tenantId, String userKey, String toolName) {
+        return ASSISTANT_TOOL_CIRCUIT_PROBE_PREFIX + tenantId + ":" + userKey + ":" + toolName;
+    }
+
+    /**
+     * 会话互斥锁 key：租户 + 用户 + 会话
+     */
+    public static String assistantChatLock(String tenantId, String userKey, String sessionId) {
+        return ASSISTANT_CHAT_LOCK_PREFIX + tenantId + ":" + userKey + ":" + sessionId;
     }
 }

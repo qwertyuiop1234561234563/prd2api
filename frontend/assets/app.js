@@ -1,4 +1,4 @@
-﻿﻿(() => {
+﻿﻿﻿﻿(() => {
   'use strict';
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -49,10 +49,14 @@
   let dpr = 1;
   let rafId = 0;
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  /** 低配设备判定：少核 / 小内存 / 慢刷新屏，常驻装饰动画与粒子密度整体降一档 */
+  const LITE = (navigator.hardwareConcurrency || 8) <= 4
+    || (navigator.deviceMemory || 8) <= 4
+    || window.matchMedia('(update: slow)').matches;
 
   function resizeCanvas() {
     if (!canvas || !ctx) return;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     canvas.width = Math.floor(innerWidth * dpr);
     canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + 'px';
@@ -62,12 +66,13 @@
 
   function seedParticles() {
     particles.length = 0;
-    const count = Math.max(26, Math.round(innerWidth / 46));
+    const count = Math.max(LITE ? 12 : 18, Math.round(innerWidth / (LITE ? 96 : 62)));
     for (let i = 0; i < count; i++) {
       particles.push({
         x: Math.random() * innerWidth,
         y: Math.random() * innerHeight,
-        size: 6 + Math.random() * 13,
+        // 字号量化成 5 档，贴图缓存才能复用
+        size: 7 + Math.floor(Math.random() * 5) * 3,
         vy: -.16 - Math.random() * .38,
         vx: (Math.random() - .5) * .18,
         alpha: .1 + Math.random() * .42,
@@ -78,27 +83,91 @@
     }
   }
 
+  /* 指针坐标：星尘靠近指针时被轻轻拨开 */
+  let px = -9999;
+  let py = -9999;
+
+  /* 字形贴图缓存：原先每帧给每个粒子设 shadowBlur 再 fillText，模糊阴影重算很贵；
+     预渲染成小图后逐帧只 drawImage，观感一致、CPU 明显下降 */
+  const SPRITES = new Map();
+  let spriteDpr = 0;
+
+  function particleSprite(p) {
+    if (spriteDpr !== dpr) { SPRITES.clear(); spriteDpr = dpr; }
+    const key = p.glyph + '|' + p.hue + '|' + p.size;
+    let sprite = SPRITES.get(key);
+    if (sprite) return sprite;
+    const pad = 10;
+    const box = p.size + pad * 2;
+    sprite = document.createElement('canvas');
+    sprite.width = sprite.height = Math.ceil(box * dpr);
+    const g = sprite.getContext('2d');
+    g.scale(dpr, dpr);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = p.size + 'px "M PLUS Rounded 1c", sans-serif';
+    g.fillStyle = 'rgba(' + p.hue + ',1)';
+    g.shadowColor = 'rgba(' + p.hue + ',.9)';
+    g.shadowBlur = 7;
+    g.fillText(p.glyph, box / 2, box / 2);
+    SPRITES.set(key, sprite);
+    return sprite;
+  }
+
+  /** 粒子上限 30fps：省 GPU，观感几乎无差 */
+  let particleLast = 0;
+
   function drawParticles(t) {
+    rafId = requestAnimationFrame(drawParticles);
     if (!ctx) return;
-    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    if (document.hidden || t - particleLast < (LITE ? 50 : 33)) return;
+    particleLast = t;
+    const w = innerWidth;
+    const h = innerHeight;
+    ctx.clearRect(0, 0, w, h);
+    // 近邻音符之间拉一条极淡的连线，像星座；只在 130px 内连，30 个粒子也就几百次距离判断
+    ctx.strokeStyle = 'rgba(107,247,234,.9)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < particles.length; i++) {
+      const a = particles[i];
+      for (let j = i + 1; j < particles.length; j++) {
+        const b = particles[j];
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > 16900) continue;
+        ctx.globalAlpha = (1 - Math.sqrt(d2) / 130) * .14;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
     for (const p of particles) {
       p.y += p.vy;
       p.x += p.vx + Math.sin((t / 2600) + p.phase) * .28;
-      if (p.y < -30) { p.y = innerHeight + 24; p.x = Math.random() * innerWidth; }
-      if (p.x < -30) p.x = innerWidth + 20;
-      if (p.x > innerWidth + 30) p.x = -20;
+      // 指针 120px 内给一个轻微的斥力，音符像被拨开
+      if (px > -9999) {
+        const rx = p.x - px;
+        const ry = p.y - py;
+        const d2 = rx * rx + ry * ry;
+        if (d2 < 14400 && d2 > 1) {
+          const d = Math.sqrt(d2);
+          const push = (1 - d / 120) * 1.6;
+          p.x += (rx / d) * push;
+          p.y += (ry / d) * push;
+        }
+      }
+      if (p.y < -30) { p.y = h + 24; p.x = Math.random() * w; }
+      if (p.x < -30) p.x = w + 20;
+      if (p.x > w + 30) p.x = -20;
       const twinkle = .55 + Math.sin(t / 700 + p.phase) * .45;
-      ctx.save();
       ctx.globalAlpha = p.alpha * twinkle;
-      ctx.fillStyle = 'rgba(' + p.hue + ',1)';
-      ctx.shadowColor = 'rgba(' + p.hue + ',.9)';
-      ctx.shadowBlur = 12;
-      ctx.font = p.size + 'px "M PLUS Rounded 1c", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(p.glyph, p.x, p.y);
-      ctx.restore();
+      const sprite = particleSprite(p);
+      const s = p.size + 20;
+      ctx.drawImage(sprite, p.x - s / 2, p.y - s / 2, s, s);
     }
-    rafId = requestAnimationFrame(drawParticles);
+    ctx.globalAlpha = 1;
   }
 
   function bootParticles() {
@@ -106,8 +175,21 @@
     resizeCanvas();
     seedParticles();
     if (!reduceMotion && innerWidth > 700) {
+      window.addEventListener('pointermove', (e) => {
+        px = e.clientX;
+        py = e.clientY;
+      }, { passive: true });
       cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(drawParticles);
+      // 切到后台就彻底停掉 rAF，避免空转唤醒；回前台再续上
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        } else if (!rafId) {
+          rafId = requestAnimationFrame(drawParticles);
+        }
+      });
     }
   }
 
@@ -211,6 +293,7 @@
       authBtn.title = user ? '退出当前账号' : '前往登录页';
     }
     updateAdminUI();
+    if (has('#pfName')) renderProfile();
   }
 
   /** 登录/注册走独立页面，登录后回到当前页 */
@@ -226,6 +309,13 @@
   function updateAdminUI() {
     const toggle = $('#couponToggle');
     if (toggle) toggle.hidden = !isAdmin();
+    // 知识库、接入设置都属于管理员配置，普通账号/游客不显示入口
+    document.querySelectorAll('.nav a[href="knowledge.html"], .nav a[href="settings.html"], .pf-link[href="settings.html"]').forEach((a) => {
+      a.hidden = !isAdmin();
+    });
+    // 已确定是游客/已登出，却停在知识库/接入设置页时退回工作台（登录态未确认时 state.token 还在，不会误伤）
+    if (has('#kbDocs') && !state.token) location.replace('index.html');
+    if (has('#cfgBase') && !state.token) location.replace('index.html');
     const drawer = $('#adminDrawer');
     if (drawer && !isAdmin()) {
       if (drawer.tagName === 'DETAILS') drawer.open = false;
@@ -300,6 +390,7 @@
     }
     // 额度卡只在账户页存在；其他页面仅缓存数据，供 fufu 回答额度
     if (has('#vipCard')) renderVip(state.vip);
+    if (has('#pfName')) renderProfile();
     return state.vip;
   }
 
@@ -658,6 +749,12 @@
     const from = Number(el.dataset.val || 0);
     if (from === target) { el.textContent = target; return; }
     el.dataset.val = target;
+    // 数值变化时弹一下，扫一眼就知道哪一项动了
+    if (!reduceMotion) {
+      el.classList.remove('bump');
+      void el.offsetWidth;
+      el.classList.add('bump');
+    }
     const start = performance.now();
     const dur = 420;
     function step(now) {
@@ -771,6 +868,14 @@
     if (tasksEl) animateNumber(tasksEl, total);
     if (okEl) animateNumber(okEl, ok);
     if (runEl) animateNumber(runEl, running);
+    // 左装饰轨的管线图例跟着统计走，宽屏一眼能看到排队/运行/完成
+    const initCount = state.tasks.filter(t => t.taskStatus === 'INIT').length;
+    const processCount = state.tasks.filter(t => t.taskStatus === 'PROCESS').length;
+    const pipeMap = { init: initCount, run: processCount, done: ok };
+    document.querySelectorAll('[data-rail]').forEach((b) => {
+      const v = pipeMap[b.dataset.rail];
+      if (v != null) b.textContent = v;
+    });
     setEq(running > 0);
     setSinging(running > 0);
   }
@@ -780,6 +885,7 @@
     const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
     return `
       <div class="task${active}" data-status="${escapeHtml(task.taskStatus)}" data-id="${escapeHtml(task.taskId)}">
+        <i class="sheen" aria-hidden="true"></i>
         <div class="task-top">
           <span class="task-id">${escapeHtml(task.taskId)}</span>
           <span class="pill ${escapeHtml(task.taskStatus)}">${STATUS_TEXT[task.taskStatus] || escapeHtml(task.taskStatus)}</span>
@@ -836,11 +942,28 @@
     $('#reportStatus').style.display = 'none';
     $('#reportBody').innerHTML = `
       <div class="report-empty">
-        <div class="glyph">♪ ♫ ♪</div>
+        <div class="radar" aria-hidden="true">
+          <span class="radar-sweep"></span>
+          <span class="radar-cross"></span>
+          <i class="radar-blip b1"></i><i class="radar-blip b2"></i>
+          <i class="radar-blip b3"></i><i class="radar-blip b4"></i>
+          <div class="glyph">♪ ♫ ♪</div>
+        </div>
         <p>选择左侧任务，查看评审报告<br>业务梳理 / 疑点清单 / DDL / 接口契约 / 任务清单</p>
+        <div class="ticker" aria-hidden="true">
+          <div class="ticker-in">
+            <span>PRD → 接口契约 → MySQL DDL → 研发任务 · 相似度查重 · RAG 语义检索 · 租户隔离 · 四阶段流水线</span>
+            <span>PRD → 接口契约 → MySQL DDL → 研发任务 · 相似度查重 · RAG 语义检索 · 租户隔离 · 四阶段流水线</span>
+          </div>
+        </div>
       </div>`;
-    $('#toc').innerHTML = '';
-    $('#scrollBar').style.width = '0%';
+    $('#toc').innerHTML = `
+      <div class="toc-void" aria-hidden="true">
+        <div class="toc-label">Index</div>
+        <div class="toc-signal">${Array.from({ length: LITE ? 4 : 6 }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</div>
+        <div class="toc-void-text">NO SIGNAL<br>等待任务选择</div>
+      </div>`;
+    $('#scrollBar').style.transform = 'scaleX(0)';
     setReportActions(false, false);
   }
 
@@ -930,6 +1053,18 @@
       chroma.textContent = on === null ? '离线' : on ? '在线' : '降级';
       chroma.style.color = on === null ? 'var(--danger)' : on ? 'var(--aqua-lit)' : 'var(--pink)';
     }
+    // 状态切换时顶栏芯片闪一下，轮询结果有变化才提示
+    const chip = $('#ragChip');
+    if (chip) {
+      const key = String(on);
+      if (chip.dataset.state && chip.dataset.state !== key) {
+        chip.classList.remove('flash');
+        void chip.offsetWidth;          // 重置动画，连续切换也能重播
+        chip.classList.add('flash');
+        setTimeout(() => chip.classList.remove('flash'), 1300);
+      }
+      chip.dataset.state = key;
+    }
   }
 
   async function refreshRag() {
@@ -1015,6 +1150,17 @@
     if (meta) meta.textContent = text || (busy ? '上传中…' : '点击或拖入文件');
   }
 
+  /** 上传成功/失败给上传区一次闪光，比只看 toast 更直接 */
+  function flashDropzone(ok) {
+    const dz = $('#dropzone');
+    if (!dz) return;
+    const cls = ok ? 'flash-ok' : 'flash-fail';
+    dz.classList.remove('flash-ok', 'flash-fail');
+    void dz.offsetWidth;
+    dz.classList.add(cls);
+    setTimeout(() => dz.classList.remove(cls), 1200);
+  }
+
   async function uploadFile(file) {
     if (!file) return;
     if (state.uploading) { toast('上一个文件还在上传，请稍候', 'warn'); return; }
@@ -1036,8 +1182,10 @@
       toast('文件已入库，可以开始解析啦');
       speak('收到！点「开始解析 ♪」我就开工', 'happy');
       setDzBusy(false, '已入库 · 可继续上传');
+      flashDropzone(true);
     } catch (e) {
       setDzBusy(false, '点击或拖入文件');
+      flashDropzone(false);
       toast(e.message, 'error');
       speak('这个文件我读不了… 换一个试试？', 'sad');
     } finally {
@@ -1187,7 +1335,7 @@
     const fufu = $('#fufu');
     if (!panel || !fufu) return;
     const rect = fufu.getBoundingClientRect();
-    const pw = panel.offsetWidth || 316;
+    const pw = panel.offsetWidth || 392;
     const ph = panel.offsetHeight || 320;
     const gap = 12;
     // 优先贴在玩偶左侧；横向放不下时（窄屏）改放到玩偶正上方，避免盖住玩偶
@@ -1241,13 +1389,15 @@
   function fcSay(html, acts, traceHtml) { fcNode('bot', html, acts, traceHtml); }
 
   // Agent 轨迹：折叠展示工具调用、知识检索与记忆写入，体现每一步可观测
-  function fcTrace(steps, mode, degraded, cacheHit, grounded, groundingNote) {
+  function fcTrace(steps, mode, degraded, cacheHit, grounded, groundingNote, citations) {
     if (!steps || !steps.length) return '';
     const labels = {
       TOOL: '工具', KNOWLEDGE: '知识库', MEMORY: '记忆', THINK: '推理',
       CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存',
-      ROUTE: '工具检索', SUBAGENT: '子 Agent', BUDGET: '预算熔断',
-      LOOP: '死循环拦截', CLARIFY: '参数追问'
+      ROUTE: '工具检索', SUBAGENT: '子 Agent', SUPERVISOR: '并行汇总',
+      CRITIC: '评审反思', BUDGET: '预算熔断',
+      LOOP: '死循环拦截', CLARIFY: '参数追问', PLAN: '执行计划',
+      REPLAN: '计划重规划', CANCEL: '已中断'
     };
     const items = steps.map((s) => {
       const kind = labels[s.type] || s.type || '步骤';
@@ -1266,9 +1416,14 @@
     const groundChip = grounded === false
       ? '<span class="fc-chip bad" title="' + escapeHtml(groundingNote || '') + '">未接地</span>'
       : '';
+    const cites = (citations || []).map((c) => '<li><b>' + escapeHtml(c.source || '') + '</b> · ' +
+      escapeHtml(c.title || '') + '<p>' + escapeHtml(String(c.snippet || '').slice(0, 100)) + '</p></li>').join('');
+    const citeBlock = cites
+      ? '<div class="fc-cites"><b>证据链 ' + citations.length + ' 条</b><ul>' + cites + '</ul></div>'
+      : '';
     return '<details class="fc-trace"><summary>Agent 轨迹 ' + steps.length + ' 步 ' + modeChip +
       cacheChip + groundChip + (degraded ? '<i>降级</i>' : '') +
-      '</summary><ul>' + items + '</ul></details>';
+      '</summary><ul>' + items + '</ul>' + citeBlock + '</details>';
   }
 
   function fcAskUser(text) { fcNode('me', escapeHtml(text)); }
@@ -1369,7 +1524,11 @@
     },
     settings: {
       label: '打开接入设置',
-      run: () => { if (PAGE !== 'settings') { location.href = 'settings.html'; return; } const base = $('#cfgBase'); if (base) base.focus(); },
+      run: () => {
+        if (!isAdmin()) { toast('接入设置仅管理员可用', 'warn'); return; }
+        if (PAGE !== 'settings') { location.href = 'settings.html'; return; }
+        const base = $('#cfgBase'); if (base) base.focus();
+      },
       say: '在接入设置里填 API Base 和透传身份，保存后我会重新连一次。'
     },
     goAccount: {
@@ -1379,7 +1538,11 @@
     },
     goSettings: {
       label: '去接入设置',
-      run: () => { if (PAGE !== 'settings') { location.href = 'settings.html'; return; } const base = $('#cfgBase'); if (base) base.focus(); },
+      run: () => {
+        if (!isAdmin()) { toast('接入设置仅管理员可用', 'warn'); return; }
+        if (PAGE !== 'settings') { location.href = 'settings.html'; return; }
+        const base = $('#cfgBase'); if (base) base.focus();
+      },
       say: '在接入设置里改 API Base、透传身份和模型。'
     },
     auth: { label: '去登录', run: () => goLogin(), say: '令牌有效期 12 小时，活动会自动续期。' },
@@ -1610,7 +1773,8 @@
     fcLiveDone(live);
     const html = escapeHtml(final.reply || '').replace(/\n/g, '<br>');
     fcSay(html, fcActsFor(action),
-      fcTrace(final.steps, final.mode, final.degraded, final.cacheHit, final.grounded, final.groundingNote));
+      fcTrace(final.steps, final.mode, final.degraded, final.cacheHit, final.grounded,
+        final.groundingNote, final.citations));
     if (action && action.type === 'CONFIRM') {
       const body = $('#fcBody');
       if (body && body.lastElementChild) body.lastElementChild.appendChild(fcConfirmCard(action));
@@ -1626,11 +1790,32 @@
     const node = document.createElement('div');
     node.className = 'fc-msg bot';
     node.innerHTML = '<span class="fc-who">MIKU</span><div class="fc-bubble">' +
-      '<div class="fc-live"><b class="fc-live-title">Agent 运行中…</b><ul></ul></div></div>';
+      '<div class="fc-live"><b class="fc-live-title">Agent 运行中…</b>' +
+      '<button class="fc-cancel-btn" type="button">中断</button><ul></ul></div></div>';
     body.appendChild(node);
     fcScroll();
     fufuChatPosition();
-    return node.querySelector('ul');
+    const list = node.querySelector('ul');
+    const btn = node.querySelector('.fc-cancel-btn');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        btn.disabled = true;
+        btn.textContent = '正在中断…';
+        fcCancelRun();
+        fcLivePush(list, '已发送中断请求，当前步骤结束后停止');
+      });
+    }
+    return list;
+  }
+
+  // 中断当前运行：不依赖会话 ID，新建会话的首轮也能中止
+  function fcCancelRun() {
+    if (!state.token) return;
+    const query = state.fcSessionId ? '?sessionId=' + encodeURIComponent(state.fcSessionId) : '';
+    fetch(state.settings.base + '/api/assistant/cancel' + query, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + state.token }
+    }).catch(() => { /* 中断是尽力而为，失败不影响本轮收尾 */ });
   }
 
   function fcLivePush(list, text) {
@@ -1648,8 +1833,10 @@
     const kind = {
       TOOL: '工具', KNOWLEDGE: '知识库', MEMORY: '记忆', CONFIRM: '待确认', GUARD: '安全检查',
       CONTEXT: '上下文压缩', SELF_CHECK: '接地自检', CACHE: '语义缓存',
-      ROUTE: '工具检索', SUBAGENT: '子 Agent', BUDGET: '预算熔断',
-      LOOP: '死循环拦截', CLARIFY: '参数追问'
+      ROUTE: '工具检索', SUBAGENT: '子 Agent', SUPERVISOR: '并行汇总',
+      CRITIC: '评审反思', BUDGET: '预算熔断',
+      LOOP: '死循环拦截', CLARIFY: '参数追问', PLAN: '执行计划',
+      REPLAN: '计划重规划', CANCEL: '已中断'
     }[step.type] || '步骤';
     const line = (bad ? '✕ ' : '✓ ') + (step.title || step.toolName || kind) +
       '（' + kind + (Number(step.latencyMs) ? ' · ' + step.latencyMs + 'ms' : '') + '）';
@@ -1729,7 +1916,8 @@
     return {
       html: html,
       acts: fcActsFor(action),
-      trace: fcTrace(data.steps, data.mode, data.degraded, data.cacheHit, data.grounded, data.groundingNote)
+      trace: fcTrace(data.steps, data.mode, data.degraded, data.cacheHit, data.grounded,
+        data.groundingNote, data.citations)
     };
   }
 
@@ -2029,8 +2217,18 @@
       if (id === lastPickId && now - lastPickAt < 400) return;  // 误双击同一张卡片只取第一次
       lastPickId = id;
       lastPickAt = now;
+      auroraBurst();
       loadDetail(id, false);
     });
+  }
+
+  /** 选任务时背景极光短暂增亮，切换更有仪式感（一次性，动画结束即恢复） */
+  function auroraBurst() {
+    if (reduceMotion) return;
+    document.body.classList.remove('aurora-burst');
+    void document.body.offsetWidth;
+    document.body.classList.add('aurora-burst');
+    setTimeout(() => document.body.classList.remove('aurora-burst'), 800);
   }
 
   /** 工作台：报告区导出 / 重试 / 删除 / 追问 */
@@ -2051,7 +2249,8 @@
       const max = reportBody.scrollHeight - reportBody.clientHeight;
       const ratio = max > 0 ? reportBody.scrollTop / max : 0;
       const bar = $('#scrollBar');
-      if (bar) bar.style.width = Math.round(ratio * 100) + '%';
+      // 用 transform 缩放代替 width：滚动时不再逐帧走布局
+      if (bar) bar.style.transform = 'scaleX(' + ratio.toFixed(3) + ')';
     }));
   }
 
@@ -2070,16 +2269,703 @@
     on('#btnRagRefresh', 'click', () => { refreshRag(); toast('正在重新探测 RAG'); });
   }
 
+  /** 个人中心：把登录态、额度与最近任务汇总到一页 */
+  function renderProfile() {
+    if (!has('#pfName')) return;
+    const u = state.user;
+    const vip = state.vip;
+    const isVip = !!(vip && vip.source === 'VIP');
+    const setText = (sel, text) => { const el = $(sel); if (el) el.textContent = text; };
+
+    setText('#pfName', u ? (u.displayName || u.username || '已登录用户') : '未登录');
+    setText('#pfHandle', u ? '@' + (u.username || '—') : '@—');
+    setText('#pfRole', u ? (u.role === 'ADMIN' ? 'ADMIN · 管理员' : (u.role || 'USER')) : '游客模式');
+    setText('#pfTenantMeta', '租户 ' + (u && u.tenantId ? u.tenantId : state.settings.tenant));
+
+    setText('#pfPlan', vip ? (vip.planName || (isVip ? 'VIP' : '租户配额')) : '额度不可用');
+    const planDot = $('#pfPlanDot');
+    if (planDot) {
+      planDot.classList.toggle('on', isVip);
+      planDot.classList.toggle('off', !isVip);
+    }
+    const stateDot = $('#pfStateChip .dot');
+    if (stateDot) {
+      stateDot.classList.toggle('on', !!u);
+      stateDot.classList.toggle('off', !u);
+    }
+    setText('#pfState', u ? '已登录' : '未登录');
+    setText('#pfAuth', u ? '退出登录' : '登录 / 注册');
+
+    const uid = u ? (u.userId != null ? u.userId : u.id) : null;
+    setText('#pfUid', uid == null ? '—' : String(uid));
+    setText('#pfUsername', u && u.username ? u.username : '—');
+    setText('#pfRoleText', u ? (u.role || 'USER') : '—');
+    setText('#pfTenantText', u && u.tenantId ? u.tenantId : state.settings.tenant);
+
+    setText('#pfUpload', vip ? (vip.usedUploadCount || 0) + '/' + fmtNum(vip.dailyUploadLimit) : '—');
+    setText('#pfToken', vip ? fmtNum(vip.usedTokenCount) + '/' + fmtNum(vip.dailyTokenLimit) : '—');
+    setText('#pfConcurrent', vip ? String(vip.concurrentTaskLimit) : '—');
+
+    let tip;
+    if (!vip) {
+      tip = '额度获取失败 · 后端未连接或服务异常';
+    } else if (isVip) {
+      const exp = vip.expireTime ? String(vip.expireTime).replace('T', ' ').slice(0, 16) : '—';
+      tip = '套餐到期 ' + exp + (vip.remainDays ? ' · 剩余 ' + vip.remainDays + ' 天' : '');
+    } else if (u) {
+      tip = '未开通 VIP，当前使用所属租户配额';
+    } else {
+      tip = '未登录，当前使用租户配额 · 登录后可用兑换码';
+    }
+    setText('#pfQuotaTip', tip);
+  }
+
+  async function loadProfileTasks() {
+    const box = $('#pfTasks');
+    if (!box) return;
+    try {
+      const page = await api('/api/task/page?pageNum=1&pageSize=6');
+      const list = page.records || [];
+      if (!list.length) {
+        box.innerHTML = '<div class="pf-empty">还没有任务，去工作台上传第一份 PRD 吧 ♪</div>';
+        return;
+      }
+      box.innerHTML = list.map((t) => `
+        <a class="pf-task" href="index.html" title="去工作台查看">
+          <span class="t-id">${escapeHtml(t.taskId)}</span>
+          <span class="t-time">${escapeHtml(fmtTime(t.createTime))}</span>
+          <span class="pill ${escapeHtml(t.taskStatus || '')}">${STATUS_TEXT[t.taskStatus] || escapeHtml(t.taskStatus || '—')}</span>
+        </a>`).join('');
+    } catch (e) {
+      box.innerHTML = '<div class="pf-empty">任务读取失败 · ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function bootProfile() {
+    const auth = $('#pfAuth');
+    if (auth) auth.addEventListener('click', () => { if (state.token) doLogout(); else goLogin(); });
+    renderProfile();
+    loadProfileTasks();
+  }
+
+  /* ── 知识库：离线文档上传 / 索引管理 / 检索测试 ── */
+  const KB_STATUS_TEXT = {
+    PENDING: '排队中', PARSING: '解析中', CHUNKING: '切分中',
+    EMBEDDING: '向量化', COMPLETED: '已完成', FAILED: '失败'
+  };
+  const KB_STATUS_CLASS = {
+    PENDING: 'pending', PARSING: 'running', CHUNKING: 'running',
+    EMBEDDING: 'running', COMPLETED: 'done', FAILED: 'fail'
+  };
+  const KB_RUNNING = ['PENDING', 'PARSING', 'CHUNKING', 'EMBEDDING'];
+  const kb = {
+    pageNum: 1, pageSize: 10, total: 0, kw: '', status: '',
+    docs: [], loading: false, uploading: false, poll: null,
+    chunk: { docId: '', name: '', pageNum: 1, pageSize: 8, total: 0 }
+  };
+
+  function kbFindDoc(docId) {
+    return kb.docs.find((d) => d.docId === docId) || null;
+  }
+
+  /** 列表里只要还有处理中的文档，就保持轮询；全部完成自动停下 */
+  function kbSyncPolling() {
+    const running = kb.docs.some((d) => KB_RUNNING.includes(d.status));
+    if (running && !kb.poll) {
+      kb.poll = setInterval(() => {
+        if (document.hidden) return;
+        loadKnowledgeDocs(true);
+        loadKnowledgeStats();
+      }, 3500);
+    } else if (!running && kb.poll) {
+      clearInterval(kb.poll);
+      kb.poll = null;
+    }
+  }
+
+  async function loadKnowledgeStats() {
+    if (!has('#kbStats')) return;
+    try {
+      const s = await api('/api/knowledge/stats');
+      const running = KB_RUNNING.reduce((sum, key) => sum + Number(s[key] || 0), 0);
+      const setText = (sel, text) => { const el = $(sel); if (el) el.textContent = text; };
+      setText('#kbStatTotal', fmtNum(s.totalDocs));
+      setText('#kbStatDone', fmtNum(s.COMPLETED));
+      setText('#kbStatRunning', fmtNum(running));
+      setText('#kbStatFail', fmtNum(s.FAILED));
+      setText('#kbStatChunks', fmtNum(s.totalChunks));
+      setText('#kbStatVector', s.vectorEnabled ? 'ONLINE' : 'LOCAL');
+    } catch (e) {
+      // 统计失败不打断主流程，顶栏 RAG 徽标会提示连接异常
+    }
+  }
+
+  async function loadKnowledgeDocs(silent) {
+    if (!has('#kbDocs') || kb.loading) return;
+    kb.loading = true;
+    try {
+      const qs = new URLSearchParams({ pageNum: String(kb.pageNum), pageSize: String(kb.pageSize) });
+      if (kb.kw) qs.set('keyword', kb.kw);
+      if (kb.status) qs.set('status', kb.status);
+      const page = await api('/api/knowledge/page?' + qs.toString());
+      kb.total = Number(page.total || 0);
+      kb.docs = page.records || [];
+      const maxPage = Math.max(1, Math.ceil(kb.total / kb.pageSize));
+      if (kb.pageNum > maxPage) {
+        kb.pageNum = maxPage;
+        kb.loading = false;
+        return loadKnowledgeDocs(silent);
+      }
+      renderKnowledgeDocs();
+    } catch (e) {
+      if (!silent) {
+        $('#kbDocs').innerHTML = '<tr><td colspan="9"><div class="kb-empty">读取失败 · '
+          + escapeHtml(e.message) + '</div></td></tr>';
+        toast(e.message, 'error');
+      }
+    } finally {
+      kb.loading = false;
+    }
+  }
+
+  function renderKnowledgeDocs() {
+    const box = $('#kbDocs');
+    if (!box) return;
+    const pages = Math.max(1, Math.ceil(kb.total / kb.pageSize));
+    $('#kbCount').textContent = kb.total + ' 份文档';
+    $('#kbPageInfo').textContent = kb.pageNum + ' / ' + pages;
+    $('#kbPrev').disabled = kb.pageNum <= 1;
+    $('#kbNext').disabled = kb.pageNum >= pages;
+
+    if (!kb.docs.length) {
+      box.innerHTML = '<tr><td colspan="9"><div class="kb-empty">'
+        + (kb.kw || kb.status ? '没有匹配的文档，换个条件试试' : '知识库还是空的，上传第一份文档吧 ♪')
+        + '</div></td></tr>';
+      kbSyncPolling();
+      return;
+    }
+
+    box.innerHTML = kb.docs.map((d) => {
+      const running = KB_RUNNING.includes(d.status);
+      const pill = KB_STATUS_CLASS[d.status] || 'pending';
+      const statusText = KB_STATUS_TEXT[d.status] || d.status || '—';
+      const failTip = d.status === 'FAILED' && d.errorMsg
+        ? ' title="' + escapeHtml(d.errorMsg) + '"' : '';
+      const vecText = d.vectorIndexed ? '已索引' : '待索引';
+      const disabled = running ? ' disabled' : '';
+      return '<tr>'
+        + '<td><div class="kb-name" title="' + escapeHtml(d.docName) + '">' + escapeHtml(d.docName) + '</div>'
+        + '<div class="kb-subline">' + escapeHtml((d.fileSuffix || '').toUpperCase())
+        + (d.duplicated ? ' · md5 复用' : '') + '</div></td>'
+        + '<td><span class="kb-chip">' + escapeHtml(d.chunkStrategy || '—') + '</span></td>'
+        + '<td class="kb-num">' + fmtSize(d.fileSize) + '</td>'
+        + '<td class="kb-num">' + fmtNum(d.chunkCount) + '</td>'
+        + '<td><span class="kb-badge ' + pill + '"' + failTip + '>' + statusText + '</span></td>'
+        + '<td><div class="kb-vec"><label class="kb-switch ' + (d.enabled ? 'on' : '')
+        + (running ? ' disabled' : '') + '" title="' + (d.enabled ? '点击停用检索' : '点击启用检索') + '">'
+        + '<input type="checkbox" data-act="toggle" data-id="' + escapeHtml(d.docId) + '"'
+        + (d.enabled ? ' checked' : '') + disabled + '><i></i></label>'
+        + '<span>' + vecText + '</span></div></td>'
+        + '<td class="kb-subline">' + escapeHtml(d.createBy || '—') + '</td>'
+        + '<td class="kb-time">' + fmtTime(d.createTime) + '</td>'
+        + '<td class="kb-ops">'
+        + '<button class="btn ghost" type="button" data-act="chunks" data-id="' + escapeHtml(d.docId) + '"'
+        + (d.chunkCount ? '' : ' disabled') + '>分段</button>'
+        + '<button class="btn ghost" type="button" data-act="rebuild" data-id="' + escapeHtml(d.docId) + '"'
+        + disabled + '>重建</button>'
+        + '<button class="btn ghost danger" type="button" data-act="delete" data-id="'
+        + escapeHtml(d.docId) + '"' + disabled + '>删除</button>'
+        + '</td></tr>';
+    }).join('');
+    kbSyncPolling();
+  }
+
+  function kbSetBusy(busy, text) {
+    const dz = $('#kbDropzone');
+    const meta = $('#kbDzMeta');
+    if (dz) dz.classList.toggle('busy', busy);
+    if (meta) meta.textContent = text || (busy ? '上传中…' : '点击或拖入文件');
+  }
+
+  async function uploadKnowledge(file) {
+    if (!file) return;
+    if (kb.uploading) { toast('上一个文件还在上传，请稍候', 'warn'); return; }
+    if (file.size > 20 * 1024 * 1024) { toast('知识文档超过 20MB 限制', 'error'); return; }
+    kb.uploading = true;
+    kbSetBusy(true, '上传中 · ' + fmtSize(file.size));
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const strategy = $('#kbStrategy').value;
+      const url = '/api/knowledge/upload' + (strategy ? '?strategy=' + encodeURIComponent(strategy) : '');
+      const data = await api(url, { method: 'POST', form, timeout: 120000 });
+      $('#kbUrName').textContent = data.docName + '　' + fmtSize(data.fileSize);
+      $('#kbUrMeta').innerHTML = data.duplicated
+        ? '<span class="ur-flag">md5 命中，已存在同内容文档，直接复用</span>'
+        : 'docId · ' + escapeHtml(data.docId) + '<br><span class="ur-flag">已提交后台索引，状态会自动刷新</span>';
+      $('#kbUploadResult').classList.add('show');
+      toast(data.duplicated ? '同内容文档已存在，已复用' : '上传成功，正在解析与向量化');
+      kbSetBusy(false, '已提交 · 可继续上传');
+      kb.pageNum = 1;
+      await Promise.all([loadKnowledgeDocs(), loadKnowledgeStats()]);
+    } catch (e) {
+      kbSetBusy(false, '点击或拖入文件');
+      toast(e.message, 'error');
+    } finally {
+      kb.uploading = false;
+    }
+  }
+
+  async function kbToggleEnabled(doc, enabled) {
+    try {
+      await api('/api/knowledge/' + encodeURIComponent(doc.docId) + '/enabled?enabled=' + enabled,
+        { method: 'PUT' });
+      toast(enabled ? '已启用检索' : '已停用检索，向量已移除');
+      await Promise.all([loadKnowledgeDocs(true), loadKnowledgeStats()]);
+    } catch (e) {
+      toast(e.message, 'error');
+      await loadKnowledgeDocs(true);
+    }
+  }
+
+  async function kbRebuild(doc) {
+    if (!confirm('重新解析并重建《' + doc.docName + '》的索引？')) return;
+    try {
+      await api('/api/knowledge/' + encodeURIComponent(doc.docId) + '/rebuild', { method: 'POST' });
+      toast('已提交重建任务');
+      await Promise.all([loadKnowledgeDocs(true), loadKnowledgeStats()]);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function kbDelete(doc) {
+    if (!confirm('删除《' + doc.docName + '》？分段、向量与本地文件都会一并清理')) return;
+    try {
+      await api('/api/knowledge/' + encodeURIComponent(doc.docId), { method: 'DELETE' });
+      toast('文档已删除');
+      await Promise.all([loadKnowledgeDocs(), loadKnowledgeStats()]);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  async function loadKbChunks() {
+    const box = $('#kbChunkList');
+    if (!box || !kb.chunk.docId) return;
+    box.innerHTML = '<div class="kb-empty">正在读取分段…</div>';
+    try {
+      const page = await api('/api/knowledge/' + encodeURIComponent(kb.chunk.docId)
+        + '/chunks?pageNum=' + kb.chunk.pageNum + '&pageSize=' + kb.chunk.pageSize);
+      const list = page.records || [];
+      kb.chunk.total = Number(page.total || 0);
+      const pages = Math.max(1, Math.ceil(kb.chunk.total / kb.chunk.pageSize));
+      $('#kbChunkPageInfo').textContent = kb.chunk.pageNum + ' / ' + pages;
+      $('#kbChunkPrev').disabled = kb.chunk.pageNum <= 1;
+      $('#kbChunkNext').disabled = kb.chunk.pageNum >= pages;
+      if (!list.length) {
+        box.innerHTML = '<div class="kb-empty">暂无分段，可能尚未完成切分</div>';
+        return;
+      }
+      box.innerHTML = list.map((c) =>
+        '<div class="kb-chunk"><div class="kb-chunk-head">'
+        + '<span>#' + escapeHtml(c.chunkNo) + '</span>'
+        + '<span>' + escapeHtml(c.source || '—') + '</span>'
+        + '<span>' + fmtNum(c.charCount) + ' 字</span></div>'
+        + '<p>' + escapeHtml(c.content) + '</p></div>').join('');
+    } catch (e) {
+      box.innerHTML = '<div class="kb-empty">分段读取失败 · ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function openKbChunks(doc) {
+    kb.chunk = { docId: doc.docId, name: doc.docName, pageNum: 1, pageSize: 8, total: Number(doc.chunkCount || 0) };
+    $('#kbChunkTitle').textContent = doc.docName;
+    $('#kbChunkMeta').textContent = (doc.chunkStrategy || '—') + ' · '
+      + fmtNum(doc.chunkCount) + ' 段 · ' + fmtNum(doc.charCount) + ' 字';
+    const modal = $('#kbChunkModal');
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+    loadKbChunks();
+  }
+
+  function closeKbChunks() {
+    const modal = $('#kbChunkModal');
+    if (!modal) return;
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  async function kbSearch() {
+    const input = $('#kbQuery');
+    const btn = $('#kbSearchBtn');
+    if (!input || !btn) return;
+    const query = input.value.trim();
+    if (!query) { toast('先输入检索语句', 'warn'); return; }
+    const box = $('#kbSearchResults');
+    btn.disabled = true;
+    const oldText = btn.textContent;
+    btn.textContent = '检索中…';
+    box.innerHTML = '<div class="kb-empty">正在召回…</div>';
+    try {
+      const topK = $('#kbTopK').value;
+      const list = await api('/api/knowledge/search?query=' + encodeURIComponent(query)
+        + '&topK=' + encodeURIComponent(topK));
+      if (!list || !list.length) {
+        box.innerHTML = '<div class="kb-empty">没有召回结果，换个描述或先上传相关文档</div>';
+        return;
+      }
+      box.innerHTML = list.map((item, idx) =>
+        '<div class="kb-result"><div class="kb-result-head">'
+        + '<span class="kb-rank">#' + (idx + 1) + '</span>'
+        + '<span class="kb-chip">' + escapeHtml(item.source || '—') + '</span>'
+        + '<span class="kb-score">score ' + Number(item.score || 0).toFixed(3) + '</span></div>'
+        + '<p>' + escapeHtml(item.content) + '</p></div>').join('');
+    } catch (e) {
+      box.innerHTML = '<div class="kb-empty">检索失败 · ' + escapeHtml(e.message) + '</div>';
+      toast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }
+  }
+
+  function bootKnowledge() {
+    const dz = $('#kbDropzone');
+    const fileInput = $('#kbFileInput');
+    const pick = () => { if (fileInput) fileInput.click(); };
+    on('#kbPick', 'click', pick);
+    if (dz) {
+      dz.addEventListener('click', (e) => { if (e.target !== fileInput) pick(); });
+      dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('drag'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+      dz.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dz.classList.remove('drag');
+        const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        uploadKnowledge(file);
+      });
+    }
+    if (fileInput) {
+      fileInput.addEventListener('change', () => {
+        const file = fileInput.files && fileInput.files[0];
+        fileInput.value = '';
+        uploadKnowledge(file);
+      });
+    }
+    if (has('#kbStrategy') && state.settings.chunk) $('#kbStrategy').value = state.settings.chunk;
+
+    const keyword = $('#kbKeyword');
+    if (keyword) {
+      keyword.addEventListener('input', debounce(() => {
+        kb.kw = keyword.value.trim();
+        kb.pageNum = 1;
+        loadKnowledgeDocs();
+      }, 400));
+    }
+    on('#kbStatusFilter', 'change', (e) => {
+      kb.status = e.target.value;
+      kb.pageNum = 1;
+      loadKnowledgeDocs();
+    });
+    on('#kbRefresh', 'click', () => {
+      loadKnowledgeDocs();
+      loadKnowledgeStats();
+      toast('已刷新知识库');
+    });
+    on('#kbPrev', 'click', () => { if (kb.pageNum > 1) { kb.pageNum -= 1; loadKnowledgeDocs(); } });
+    on('#kbNext', 'click', () => { kb.pageNum += 1; loadKnowledgeDocs(); });
+
+    const tbody = $('#kbDocs');
+    if (tbody) {
+      tbody.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-act]');
+        if (!btn || btn.disabled) return;
+        const doc = kbFindDoc(btn.dataset.id);
+        if (!doc) return;
+        const act = btn.dataset.act;
+        if (act === 'chunks') openKbChunks(doc);
+        else if (act === 'rebuild') kbRebuild(doc);
+        else if (act === 'delete') kbDelete(doc);
+      });
+      tbody.addEventListener('change', (e) => {
+        const el = e.target.closest('input[data-act="toggle"]');
+        if (!el) return;
+        const doc = kbFindDoc(el.dataset.id);
+        if (doc) kbToggleEnabled(doc, el.checked);
+      });
+    }
+
+    on('#kbChunkClose', 'click', closeKbChunks);
+    on('#kbChunkPrev', 'click', () => {
+      if (kb.chunk.pageNum > 1) { kb.chunk.pageNum -= 1; loadKbChunks(); }
+    });
+    on('#kbChunkNext', 'click', () => { kb.chunk.pageNum += 1; loadKbChunks(); });
+    const modal = $('#kbChunkModal');
+    if (modal) {
+      modal.addEventListener('click', (e) => { if (e.target === modal) closeKbChunks(); });
+    }
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeKbChunks();
+    });
+
+    on('#kbSearchBtn', 'click', kbSearch);
+    const query = $('#kbQuery');
+    if (query) {
+      query.addEventListener('keydown', (e) => { if (e.key === 'Enter') kbSearch(); });
+    }
+
+    loadKnowledgeStats();
+    loadKnowledgeDocs();
+  }
+
+  /** 指针光球 + 点击涟漪：只创建一次，缓动在 rAF 里做，静止后自动停帧 */
+  function bootPointerFx() {
+    if (reduceMotion) return;
+    if (!window.matchMedia('(pointer:fine)').matches) return;
+
+    const halo = document.createElement('div');
+    halo.className = 'cursor-orb-halo';
+    halo.setAttribute('aria-hidden', 'true');
+    const dot = document.createElement('div');
+    dot.className = 'cursor-orb';
+    dot.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(halo);
+    document.body.appendChild(dot);
+
+    let tx = innerWidth / 2;
+    let ty = innerHeight / 2;
+    let dx = tx;
+    let dy = ty;
+    let hx = tx;
+    let hy = ty;
+    let lastMove = 0;
+    let raf = 0;
+    let shown = false;
+
+    const tick = () => {
+      raf = 0;
+      dx += (tx - dx) * .22;
+      dy += (ty - dy) * .22;
+      hx += (tx - hx) * .09;
+      hy += (ty - hy) * .09;
+      dot.style.transform = 'translate3d(' + dx.toFixed(1) + 'px,' + dy.toFixed(1) + 'px,0)';
+      halo.style.transform = 'translate3d(' + hx.toFixed(1) + 'px,' + hy.toFixed(1) + 'px,0)';
+      const settled = Math.abs(tx - dx) < .5 && Math.abs(ty - dy) < .5
+        && Math.abs(tx - hx) < .5 && Math.abs(ty - hy) < .5;
+      // 指针还在动或外环没追上就继续，否则停掉，避免空跑 rAF
+      if (!settled || performance.now() - lastMove < 200) raf = requestAnimationFrame(tick);
+    };
+
+    window.addEventListener('pointermove', (e) => {
+      tx = e.clientX;
+      ty = e.clientY;
+      lastMove = performance.now();
+      if (!shown) {
+        shown = true;
+        dot.classList.add('show');
+        halo.classList.add('show');
+      }
+      if (!raf && !document.hidden) raf = requestAnimationFrame(tick);
+    }, { passive: true });
+
+    document.addEventListener('mouseleave', () => {
+      shown = false;
+      dot.classList.remove('show');
+      halo.classList.remove('show');
+    });
+
+    // 点击涟漪：按下处扩散光圈，动画结束即移除
+    window.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const wave = document.createElement('span');
+      wave.className = 'click-wave';
+      wave.style.left = e.clientX + 'px';
+      wave.style.top = e.clientY + 'px';
+      document.body.appendChild(wave);
+      wave.addEventListener('animationend', () => wave.remove(), { once: true });
+      setTimeout(() => wave.remove(), 900);   // 兜底：动画被跳过时也不残留
+
+      // 按钮上按下时蹦出几个音符
+      const btn = e.target && e.target.closest ? e.target.closest('.btn') : null;
+      if (!btn) return;
+      for (let i = 0; i < 3; i++) {
+        const note = document.createElement('span');
+        note.className = 'note-burst';
+        note.textContent = NOTES[Math.floor(Math.random() * NOTES.length)];
+        note.style.left = e.clientX + 'px';
+        note.style.top = e.clientY + 'px';
+        note.style.setProperty('--nx', ((Math.random() - .5) * 52).toFixed(0) + 'px');
+        note.style.setProperty('--ny', (-(28 + Math.random() * 34)).toFixed(0) + 'px');
+        note.style.setProperty('--nr', ((Math.random() - .5) * 50).toFixed(0) + 'deg');
+        document.body.appendChild(note);
+        note.addEventListener('animationend', () => note.remove(), { once: true });
+        setTimeout(() => note.remove(), 1100);
+      }
+    }, { passive: true });
+  }
+
   /** 所有页面共用：导航高亮、登录按钮、点按水波纹、星尘与窗口尺寸 */
   function bootChrome() {
+    bootPointerFx();
     document.querySelectorAll('.btn').forEach(addRipple);
 
-    const active = PAGE === 'account' ? 'account.html' : PAGE === 'settings' ? 'settings.html' : 'index.html';
+    const active = {
+      account: 'account.html', settings: 'settings.html',
+      profile: 'profile.html', knowledge: 'knowledge.html'
+    }[PAGE] || 'index.html';
     document.querySelectorAll('.nav a').forEach((a) => {
       a.classList.toggle('active', (a.getAttribute('href') || '') === active);
     });
 
     on('#authToggle', 'click', () => { if (state.token) doLogout(); else goLogin(); });
+
+    // 舞台追光 + 极光视差 + 背景主视觉：写进 CSS 变量，光跟着指针走、两层图不同深度漂移
+    // 整屏遮罩与滤镜对变量变更很敏感，这里限制到 30fps 且位移 >2px 才写，避免逐帧重绘
+    let stageX = -9999;
+    let stageY = -9999;
+    let stageAt = 0;
+    let maskAt = 0;
+    const onStageMove = rafThrottle((e) => {
+      const now = performance.now();
+      if (now - stageAt < 33) return;
+      if (Math.abs(e.clientX - stageX) < 2 && Math.abs(e.clientY - stageY) < 2) return;
+      stageAt = now;
+      stageX = e.clientX;
+      stageY = e.clientY;
+      const s = document.documentElement.style;
+      const nx = e.clientX / window.innerWidth - 0.5;
+      const ny = e.clientY / window.innerHeight - 0.5;
+      s.setProperty('--px', `${nx * 26}px`);
+      s.setProperty('--py', `${ny * 26}px`);
+      // 全屏遮罩与整页底色追光都跟着这两个变量重绘，单独降到 20fps
+      if (now - maskAt >= 50) {
+        maskAt = now;
+        s.setProperty('--kx', `${e.clientX}px`);
+        s.setProperty('--ky', `${e.clientY}px`);
+      }
+      // 背景图：虚焦层小幅度、聚光层反方向大幅度，制造景深
+      s.setProperty('--bx', `${nx * 34}px`);
+      s.setProperty('--by', `${ny * 22}px`);
+      s.setProperty('--sx', `${nx * -58}px`);
+      s.setProperty('--sy', `${ny * -38}px`);
+    });
+    window.addEventListener('pointermove', onStageMove, { passive: true });
+
+    // 指针驱动：卡片内部聚光 + 轻微 3D 倾斜（只在命中卡片时计算，避免全量遍历）
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const GLOW_SEL = '.pane, .panel, .acc-card--wide, .profile-hero, .task, .stat-strip, .pf-metric, .pf-link';
+      const TILT_SEL = '.task, .mascot, .report-empty, .panel, .acc-card--wide, .profile-hero';
+      let glowEl = null;
+      let tiltEl = null;
+      let glowAt = 0;
+      // 卡片内聚光与倾斜常常命中同一个元素，rect 只量一次
+      let rectEl = null;
+      let rectVal = null;
+      const rectFor = (el) => {
+        if (el !== rectEl) { rectEl = el; rectVal = el.getBoundingClientRect(); }
+        return rectVal;
+      };
+
+      const onCardMove = rafThrottle((e) => {
+        const t = e.target;
+        if (!t || !t.closest) return;
+        rectEl = null; rectVal = null; // 每帧重新测量，避免布局变化后用到过期尺寸
+
+        const glow = t.closest(GLOW_SEL);
+        if (glow !== glowEl) {
+          if (glowEl) glowEl.style.removeProperty('--cx');
+          if (glowEl) glowEl.style.removeProperty('--cy');
+          glowEl = glow;
+        }
+        // 大面积卡片的径向渐变重绘较贵，聚光限制到 ~25fps（倾斜仍逐帧，不会显得卡）
+        const now = performance.now();
+        if (glow && now - glowAt >= 40) {
+          glowAt = now;
+          const r = rectFor(glow);
+          glow.style.setProperty('--cx', `${((e.clientX - r.left) / r.width) * 100}%`);
+          glow.style.setProperty('--cy', `${((e.clientY - r.top) / r.height) * 100}%`);
+        }
+
+        const tilt = t.closest(TILT_SEL);
+        if (tilt !== tiltEl) {
+          if (tiltEl) tiltEl.style.removeProperty('--tx');
+          if (tiltEl) tiltEl.style.removeProperty('--ty');
+          if (tiltEl) tiltEl.style.removeProperty('--lookx');
+          if (tiltEl) tiltEl.style.removeProperty('--looky');
+          tiltEl = tilt;
+        }
+        if (tilt) {
+          const r = rectFor(tilt);
+          const dx = (e.clientX - r.left) / r.width - 0.5;
+          const dy = (e.clientY - r.top) / r.height - 0.5;
+          tilt.style.setProperty('--ty', `${dx * 5}deg`);
+          tilt.style.setProperty('--tx', `${-dy * 4}deg`);
+          // 看板娘：图整体朝指针挪一点，像把视线转过来
+          tilt.style.setProperty('--lookx', `${dx * 10}px`);
+          tilt.style.setProperty('--looky', `${dy * 7}px`);
+        }
+      });
+      window.addEventListener('pointermove', onCardMove, { passive: true });
+
+      // 磁吸按钮：指针靠近时按钮被轻微吸过去；缓存 rect，避免每帧读布局
+      const MAG_REACH = 92;
+      const MAG_MAX = 7;
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+      let magnets = [];
+      let magnetAt = 0;
+      const syncMagnets = () => {
+        magnets = Array.from(document.querySelectorAll('.btn')).map((el) => ({
+          el, r: el.getBoundingClientRect(), tx: 0, ty: 0
+        }));
+        magnetAt = performance.now();
+      };
+      syncMagnets();
+      const onMagnet = rafThrottle((e) => {
+        let active = false;
+        for (const m of magnets) {
+          const r = m.r;
+          if (!r.width || !r.height) continue;
+          const dx = e.clientX - (r.left + r.width / 2);
+          const dy = e.clientY - (r.top + r.height / 2);
+          const reach = MAG_REACH + Math.max(r.width, r.height) / 2;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          let tx = 0;
+          let ty = 0;
+          if (dist < reach) {
+            const k = 1 - dist / reach;
+            tx = clamp(dx * 0.22 * k, -MAG_MAX, MAG_MAX);
+            ty = clamp(dy * 0.22 * k, -MAG_MAX, MAG_MAX);
+            active = true;
+          }
+          if (Math.abs(tx - m.tx) > 0.2 || Math.abs(ty - m.ty) > 0.2) {
+            m.tx = tx;
+            m.ty = ty;
+            m.el.style.translate = tx || ty ? `${tx.toFixed(1)}px ${ty.toFixed(1)}px` : '';
+          }
+        }
+        // 没有按钮被吸住时才重新测量，保证动态渲染出来的按钮也能跟上
+        if (!active && performance.now() - magnetAt > 800) syncMagnets();
+      });
+      window.addEventListener('pointermove', onMagnet, { passive: true });
+      window.addEventListener('resize', debounce(syncMagnets, 200));
+    }
+
+    // 导航滑轨光条：跟着悬停项滑动，指针离开后回到当前页
+    const nav = $('.nav');
+    if (nav) {
+      const links = Array.from(nav.querySelectorAll('a'));
+      const moveRail = (el) => {
+        if (!el) { nav.style.setProperty('--rail-o', '0'); return; }
+        nav.style.setProperty('--rail-x', `${el.offsetLeft}px`);
+        nav.style.setProperty('--rail-w', `${el.offsetWidth}px`);
+        nav.style.setProperty('--rail-o', '1');
+      };
+      links.forEach((a) => a.addEventListener('pointerenter', () => moveRail(a)));
+      nav.addEventListener('pointerleave', () => moveRail(nav.querySelector('a.active')));
+      moveRail(nav.querySelector('a.active'));
+      window.addEventListener('resize', debounce(() => moveRail(nav.querySelector('a.active')), 200));
+    }
 
     // canvas 尺寸重算按帧节流，粒子重排防抖，避免拖拽窗口时反复重建
     window.addEventListener('resize', rafThrottle(resizeCanvas));
@@ -2101,6 +2987,106 @@
     if (has('#reportBody')) bootReport();
     if (has('#vipCard')) bootAccount();
     if (has('#cfgBase')) bootSettings();
+    if (has('#pfTasks')) bootProfile();
+  }
+
+  /** 知识库仅管理员可用：等登录态确认后再决定放行还是退回工作台 */
+  function guardKnowledgeAccess() {
+    if (!has('#kbDocs')) return;
+    if (isAdmin()) { bootKnowledge(); return; }
+    toast('知识库仅管理员可用，正在返回工作台', 'warn');
+    setTimeout(() => location.replace('index.html'), 900);
+  }
+
+  /** 接入设置仅管理员可用：登录态确认后，普通账号/游客退回工作台 */
+  function guardSettingsAccess() {
+    if (!has('#cfgBase')) return;
+    if (isAdmin()) return;
+    toast('接入设置仅管理员可修改，正在返回工作台', 'warn');
+    setTimeout(() => location.replace('index.html'), 900);
+  }
+
+  /* ── 宽屏两侧装饰轨 ─────────────────────── */
+  /** 工作台最大宽度 1760px，更宽的屏幕两侧会留白；这里补两条 HUD 装饰轨 */
+  function bootSideRails() {
+    if (!$('.shell') || has('.side-rail')) return;
+    const mk = (side) => {
+      const rail = document.createElement('aside');
+      rail.className = 'side-rail ' + side;
+      rail.setAttribute('aria-hidden', 'true');
+      const isLeft = side === 'left';
+      const ticks = Array.from({ length: 17 }, (_, i) => `<i style="--i:${i}"></i>`).join('');
+      const eq = Array.from({ length: LITE ? 6 : 7 }, (_, i) => `<i style="--i:${i}"></i>`).join('');
+      // 左轨挂管线图例（数值由 renderStats 同步），右轨挂本地时钟
+      const row = (label, key) => `<div class="rail-pipe-row"><em class="rail-dot"></em><span>${label}</span><b data-rail="${key}">0</b></div>`;
+      rail.innerHTML =
+        `<div class="rail-head"><span>${isLeft ? 'SEC-01' : 'SEC-02'}</span><em class="rail-led"></em></div>` +
+        `<div class="rail-ring"><span>${isLeft ? '♪' : '♫'}</span></div>` +
+        (isLeft
+          ? `<div class="rail-ruler">${ticks}<b class="rail-scan"></b></div>` +
+            `<div class="rail-pipe">${row('INIT', 'init')}${row('RUN', 'run')}${row('DONE', 'done')}</div>`
+          : `<div class="rail-eq">${eq}</div>` +
+            `<div class="rail-clock" id="railClock">00:00:00</div>`) +
+        `<div class="rail-word">${isLeft ? 'PRD · RAG · PIPELINE' : 'VOCALOID · CONSOLE'}</div>` +
+        `<div class="rail-foot"><em class="rail-led"></em><span>${isLeft ? 'SYS v26' : 'SYNCED'}</span></div>`;
+      document.body.appendChild(rail);
+    };
+    mk('left');
+    mk('right');
+    tickRailClock();
+    setInterval(tickRailClock, 1000);
+  }
+
+  /** 右轨本地时钟：每秒一次文本更新，开销可忽略 */
+  function tickRailClock() {
+    const el = $('#railClock');
+    if (!el) return;
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    el.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  /** 性能兜底：低配设备挂 fx-lite（关常驻动画），标签页隐藏时暂停全部 CSS 动画 */
+  function bootPerfMode() {
+    document.body.classList.toggle('fx-lite', LITE);
+    const sync = () => document.body.classList.toggle('page-hidden', document.hidden);
+    sync();
+    document.addEventListener('visibilitychange', sync);
+  }
+
+  /** 屏幕四周的 L 形定位角：静态装饰，一次生成 */
+  function bootHud() {
+    if (has('.hud-corners')) return;
+    const frame = document.createElement('div');
+    frame.className = 'hud-corners';
+    frame.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(frame);
+  }
+
+  /** 启动序列：每个会话只放一次，约 1.4 秒后自动淡出并移除 */
+  function bootSequence() {
+    if (reduceMotion) return;
+    try {
+      if (sessionStorage.getItem('prd2api.booted')) return;
+      sessionStorage.setItem('prd2api.booted', '1');
+    } catch (e) { /* 隐私模式下忽略 */ }
+    const ov = document.createElement('div');
+    ov.className = 'boot-seq';
+    ov.setAttribute('aria-hidden', 'true');
+    const steps = ['LINK AUTH CORE', 'LOAD RAG INDEX', 'MOUNT PRD PARSER'];
+    ov.innerHTML =
+      '<div class="boot-card">' +
+        '<div class="boot-brand">MIKU <em>//</em> PRD2API</div>' +
+        '<div class="boot-lines">' +
+          steps.map((s, i) => `<span style="--i:${i}">${s}<b>OK</b></span>`).join('') +
+        '</div>' +
+        '<div class="boot-bar"><i></i></div>' +
+        '<div class="boot-tip">Vocaloid Console · Ready</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('animationend', (e) => {
+      if (e.animationName === 'bootOut') ov.remove();
+    });
   }
 
   function boot() {
@@ -2109,10 +3095,14 @@
     bind();
     renderEmptyReport();
     bootParticles();
+    bootSideRails();
+    bootHud();
+    bootSequence();
+    bootPerfMode();
     refreshRag();
     loadQueue(true);
     refreshVip();
-    loadMe();
+    loadMe().then(() => { guardKnowledgeAccess(); guardSettingsAccess(); });
     loadCoupons();
     if (has('#speech')) {
       setTimeout(() => speak('把 PRD 丢进来吧，我帮你把需求唱成代码的结构 ♪'), 900);

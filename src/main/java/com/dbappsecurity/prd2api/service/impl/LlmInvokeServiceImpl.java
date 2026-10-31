@@ -207,6 +207,16 @@ public class LlmInvokeServiceImpl implements LlmInvokeService {
         try (Response response = okHttpClient.newCall(request).execute()) {
             httpCode = response.code();
             responseBody = response.body() == null ? "" : response.body().string();
+        } catch (java.net.SocketTimeoutException e) {
+            // 读超时多为单次生成本身耗时过长（推理型模型先输出思维链），重试只会成倍放大等待时间，
+            // 因此只在连接超时时重试，读超时直接失败并给出可操作提示
+            String reason = StrUtil.blankToDefault(e.getMessage(), "timeout");
+            if (StrUtil.containsIgnoreCase(reason, "connect")) {
+                throw new RetryableLlmException("LLM 连接超时: " + reason, e);
+            }
+            throw new BizException(BizErrorCodeEnum.BIZ_ERROR,
+                    "LLM 调用超时（read-timeout=" + (llm.getReadTimeout() / 1000)
+                            + "s 仍未返回），请稍后重试或缩减文档长度");
         } catch (Exception e) {
             throw new RetryableLlmException("LLM 网络调用异常: " + e.getMessage(), e);
         } finally {

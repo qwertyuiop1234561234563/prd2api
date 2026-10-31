@@ -23,7 +23,9 @@ CREATE TABLE IF NOT EXISTS `prd_task` (
   KEY `idx_user_key`(`user_key`),
   KEY `idx_status`(`task_status`),
   KEY `idx_file_meta`(`file_meta_id`),
-  KEY `idx_tenant_status`(`tenant_id`,`task_status`)
+  KEY `idx_tenant_status`(`tenant_id`,`task_status`),
+  KEY `idx_tenant_create`(`tenant_id`,`create_time`),
+  KEY `idx_create_time`(`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT 'PRD解析任务主表';
 
 CREATE TABLE IF NOT EXISTS `file_meta` (
@@ -199,6 +201,7 @@ CREATE TABLE IF NOT EXISTS `audit_log` (
   `error_msg` VARCHAR(512) DEFAULT NULL COMMENT '失败原因',
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',
   KEY `idx_tenant_time`(`tenant_id`,`create_time`),
+  KEY `idx_tenant_user_time`(`tenant_id`,`user_key`,`create_time`),
   KEY `idx_action`(`action`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '操作审计日志表';
 
@@ -274,3 +277,45 @@ CREATE TABLE IF NOT EXISTS `assistant_agent_trace` (
   KEY `idx_trace_id`(`trace_id`),
   KEY `idx_tenant_create`(`tenant_id`,`user_id`,`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '桌面助手 Agent 轨迹表';
+
+-- 助手知识库文档：租户级离线知识，上传后异步解析 / 切分 / 向量化
+CREATE TABLE IF NOT EXISTS `assistant_knowledge_doc` (
+  `doc_id` VARCHAR(64) NOT NULL COMMENT '文档ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `doc_name` VARCHAR(160) NOT NULL COMMENT '文件名（已清洗）',
+  `file_suffix` VARCHAR(16) NOT NULL COMMENT '文件后缀',
+  `file_store_path` VARCHAR(512) DEFAULT NULL COMMENT '本地存储路径',
+  `file_md5` VARCHAR(64) NOT NULL COMMENT '文件MD5，租户内去重',
+  `file_size` BIGINT DEFAULT 0 COMMENT '文件大小（字节）',
+  `chunk_strategy` VARCHAR(16) NOT NULL DEFAULT 'semantic' COMMENT '切分策略 fixed / semantic',
+  `char_count` INT DEFAULT 0 COMMENT '正文字符数',
+  `chunk_count` INT DEFAULT 0 COMMENT '分段数',
+  `status` VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/PARSING/CHUNKING/EMBEDDING/COMPLETED/FAILED',
+  `error_msg` VARCHAR(512) DEFAULT NULL COMMENT '失败原因',
+  `enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否参与检索 0 停用 1 启用',
+  `vector_indexed` TINYINT NOT NULL DEFAULT 0 COMMENT '是否已写入向量库',
+  `create_by` VARCHAR(64) DEFAULT NULL COMMENT '上传人',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `deleted` TINYINT DEFAULT 0 COMMENT '逻辑删除 0 正常 1 已删除',
+  PRIMARY KEY (`doc_id`),
+  UNIQUE KEY `uk_tenant_md5`(`tenant_id`,`file_md5`,`deleted`),
+  KEY `idx_tenant_status`(`tenant_id`,`status`,`enabled`),
+  KEY `idx_tenant_create`(`tenant_id`,`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '助手知识库文档表';
+
+-- 助手知识库分段：正文落库，支撑本地降级召回与分段预览
+CREATE TABLE IF NOT EXISTS `assistant_knowledge_chunk` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY,
+  `doc_id` VARCHAR(64) NOT NULL COMMENT '所属文档ID',
+  `tenant_id` VARCHAR(64) NOT NULL COMMENT '租户ID',
+  `chunk_no` INT NOT NULL DEFAULT 1 COMMENT '文档内序号',
+  `content` TEXT NOT NULL COMMENT '分段正文',
+  `char_count` INT DEFAULT 0 COMMENT '字符数',
+  `source` VARCHAR(160) DEFAULT NULL COMMENT '引用来源标签',
+  `vector_id` VARCHAR(64) DEFAULT NULL COMMENT '向量库主键',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `deleted` TINYINT DEFAULT 0 COMMENT '逻辑删除 0 正常 1 已删除',
+  KEY `idx_doc`(`doc_id`,`chunk_no`),
+  KEY `idx_tenant_id`(`tenant_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT '助手知识库分段表';

@@ -111,6 +111,18 @@ public class AgentServiceImpl implements AgentService {
         TenantContextUtil.set(task.getTenantId(), task.getUserKey(), TenantContextUtil.USER_ROLE);
         long start = System.currentTimeMillis();
         try {
+            // 排队期间状态可能已被僵死回收或用户取消，重新读取后再判定，避免把 FAIL 任务又跑成 SUCCESS
+            PrdTask latest = prdTaskMapper.selectById(taskId);
+            if (latest == null) {
+                log.warn("任务已被清理，跳过执行 taskId={}", taskId);
+                return;
+            }
+            if (!TaskStatusEnum.INIT.getCode().equals(latest.getTaskStatus())
+                    && !TaskStatusEnum.PROCESS.getCode().equals(latest.getTaskStatus())) {
+                log.warn("任务状态已变更，跳过执行 taskId={} status={}", taskId, latest.getTaskStatus());
+                return;
+            }
+            task = latest;
             if (isCanceled(taskId) || TaskStatusEnum.CANCELED.getCode().equals(task.getTaskStatus())) {
                 updateCanceled(taskId);
                 log.info("任务已取消，跳过执行 taskId={}", taskId);

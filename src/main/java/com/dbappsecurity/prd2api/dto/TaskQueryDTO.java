@@ -13,6 +13,7 @@ import lombok.Data;
 public class TaskQueryDTO {
 
     @Min(value = 1, message = "pageNum 最小为 1")
+    @Max(value = 1000, message = "pageNum 最大为 1000")
     @Schema(description = "页码，从 1 开始", defaultValue = "1")
     private int pageNum = 1;
 

@@ -35,6 +35,30 @@ public final class SimilarityUtil {
     }
 
     /**
+     * 查询词覆盖率：查询的 bigram 有多少出现在文本中，0~1
+     * <p>
+     * 与 Dice 系数互补：Dice 会被长文档稀释，覆盖率只衡量“问题里的词被证据命中了多少”，
+     * 适合作为本地降级召回的证据置信度。
+     */
+    public static double coverage(String query, String text) {
+        if (StrUtil.isBlank(query) || StrUtil.isBlank(text)) {
+            return 0.0D;
+        }
+        Set<String> queryGrams = bigrams(query);
+        if (queryGrams.isEmpty()) {
+            return 0.0D;
+        }
+        Set<String> textGrams = bigrams(text);
+        int overlap = 0;
+        for (String gram : queryGrams) {
+            if (textGrams.contains(gram)) {
+                overlap++;
+            }
+        }
+        return (double) overlap / queryGrams.size();
+    }
+
+    /**
      * 文档级查重：抽样分块后取平均相似度
      */
     public static double documentSimilarity(String textA, String textB) {

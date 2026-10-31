@@ -23,23 +23,30 @@ import com.dbappsecurity.prd2api.mapper.AssistantChatMessageMapper;
 import com.dbappsecurity.prd2api.mapper.AssistantChatSessionMapper;
 import com.dbappsecurity.prd2api.rag.KnowledgeBaseService;
 import com.dbappsecurity.prd2api.service.AssistantAgentService;
+import com.dbappsecurity.prd2api.service.AssistantBulkheadService;
+import com.dbappsecurity.prd2api.service.AssistantCancellationService;
 import com.dbappsecurity.prd2api.service.AssistantConfirmationService;
 import com.dbappsecurity.prd2api.service.AssistantMemoryService;
+import com.dbappsecurity.prd2api.service.AssistantProvenanceService;
 import com.dbappsecurity.prd2api.service.AssistantSemanticCacheService;
 import com.dbappsecurity.prd2api.service.AssistantService;
 import com.dbappsecurity.prd2api.service.LlmInvokeService;
 import com.dbappsecurity.prd2api.util.AssistantIntentResolver;
 import com.dbappsecurity.prd2api.util.MetricUtil;
+import com.dbappsecurity.prd2api.util.PiiMaskUtil;
 import com.dbappsecurity.prd2api.util.RateLimitUtil;
 import com.dbappsecurity.prd2api.util.SensitiveFilterUtil;
 import com.dbappsecurity.prd2api.util.TenantContextUtil;
 import com.dbappsecurity.prd2api.vo.AgentStepVO;
 import com.dbappsecurity.prd2api.vo.AssistantCapabilityVO;
+import com.dbappsecurity.prd2api.vo.AssistantCitationVO;
 import com.dbappsecurity.prd2api.vo.AssistantMessageVO;
 import com.dbappsecurity.prd2api.vo.AssistantReplyVO;
 import com.dbappsecurity.prd2api.vo.AssistantSessionVO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,6 +54,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 桌面助手服务实现
@@ -60,12 +71,22 @@ import java.util.List;
 public class AssistantServiceImpl implements AssistantService {
 
     private static final int MAX_PAGE_SIZE = 50;
+    /** 释放会话锁：值仍属于自己才删除，避免误删别人重新获取的锁 */
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>(
+            "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+            Long.class);
+    /** 可作为答复证据的轨迹类型 */
+    private static final List<String> CITATION_TYPES = List.of("KNOWLEDGE", "TOOL", "SUBAGENT", "MEMORY");
+    /** 证据链条目上限，避免把整轮轨迹全量透出 */
+    private static final int MAX_CITATIONS = 8;
 
     private final AssistantChatSessionMapper sessionMapper;
     private final AssistantChatMessageMapper messageMapper;
     private final AssistantAgentTraceMapper traceMapper;
     private final AssistantAgentService agentService;
+    private final AssistantBulkheadService bulkheadService;
     private final AssistantMemoryService memoryService;
+    private final AssistantProvenanceService provenanceService;
     private final AssistantToolRegistry toolRegistry;
     private final AssistantToolExecutor toolExecutor;
     private final AssistantConfirmationService confirmationService;
@@ -77,6 +98,7 @@ public class AssistantServiceImpl implements AssistantService {
     private final RateLimitUtil rateLimitUtil;
     private final MetricUtil metricUtil;
     private final Prd2ApiProperties properties;
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Override
     public AssistantReplyVO chat(AssistantChatDTO dto) {
@@ -95,6 +117,33 @@ public class AssistantServiceImpl implements AssistantService {
         rateLimitUtil.check(RedisKeyConstant.limitAssistant(tenantId, userKey),
                 config.getRateLimitPerMinute());
 
+        // 并发舱壁：限制同时在执行的问答轮数，超限快速失败，避免瞬时流量打满线程池与下游依赖
+        AssistantBulkheadService.Permit permit = bulkheadService.tryAcquire(tenantId);
+        if (!permit.allowed()) {
+            log.info("并发舱壁拒绝请求 tenant={} reason={}", tenantId, permit.reason());
+            return overloadedReply(dto.getSessionId(), permit.reason());
+        }
+
+        // 会话互斥：同一会话同一时刻只允许一轮对话，避免并发请求互相覆盖历史、检查点与记忆
+        String lockKey = null;
+        String lockToken = null;
+        try {
+            if (config.isChatLockEnabled() && StrUtil.isNotBlank(dto.getSessionId())) {
+                lockKey = RedisKeyConstant.assistantChatLock(tenantId, userKey, dto.getSessionId());
+                lockToken = userId + ":" + UUID.randomUUID();
+                try {
+                    boolean acquired = Boolean.TRUE.equals(stringRedisTemplate.opsForValue().setIfAbsent(
+                            lockKey, lockToken, Math.max(1, config.getChatLockSeconds()), TimeUnit.SECONDS));
+                    if (!acquired) {
+                        log.info("会话正在处理中，拒绝并发请求 sessionId={}", dto.getSessionId());
+                        return busyReply(dto.getSessionId());
+                    }
+                } catch (Exception e) {
+                    // 锁服务异常不能阻断对话，降级为不互斥
+                    log.warn("会话锁获取失败，本轮降级为并发执行 msg={}", e.getMessage());
+                    lockToken = null;
+                }
+            }
         String message = sensitiveFilterUtil.mask(dto.getMessage()).trim();
         AssistantChatSession session = loadOrCreateSession(dto.getSessionId(), tenantId, userId, message);
         List<AssistantChatMessage> history = loadRecentMessages(session.getSessionId(), config.getHistoryLimit());
@@ -104,7 +153,7 @@ public class AssistantServiceImpl implements AssistantService {
         userMessage.setTenantId(tenantId);
         userMessage.setUserId(userId);
         userMessage.setRole(AssistantChatMessage.ROLE_USER);
-        userMessage.setContent(message);
+        userMessage.setContent(maskPii(message));
         userMessage.setCreateTime(LocalDateTime.now());
         messageMapper.insert(userMessage);
 
@@ -114,7 +163,11 @@ public class AssistantServiceImpl implements AssistantService {
         AssistantAgentService.AgentOutcome outcome = cached != null
                 ? cacheOutcome(cached, listener)
                 : agentService.run(session.getSessionId(), message, history, listener);
-        String reply = outcome.reply();
+        String reply = maskPii(outcome.reply());
+        // 轨迹要返回前端并落库：统一脱敏，避免 MEMORY/兜底等未走 SSE 的步骤漏出 PII
+        maskSteps(outcome.steps());
+        // 答复溯源：把证据与答复做原文对齐，量化“结论有据可依”的比例
+        AssistantProvenanceService.Report provenance = provenanceReport(reply, outcome.steps());
         boolean degraded = outcome.degraded();
         if (cached == null && semanticCacheService.cacheable(message, outcome, intent.getCode())) {
             semanticCacheService.put(message, reply, outcome.mode(), intent.getCode(), outcome.steps());
@@ -155,7 +208,51 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setCacheScore(cached == null ? 0.0D : cached.score());
         vo.setGrounded(grounded(outcome.steps()));
         vo.setGroundingNote(groundingNote(outcome.steps()));
+        vo.setCitations(citations(outcome.steps(), provenance));
+        vo.setCitationCoverage(provenance.coverage());
+        vo.setCitationVerified(provenance.verified());
+        vo.setCitationTotal(provenance.total());
         vo.setTime(assistantMessage.getCreateTime());
+        return vo;
+        } finally {
+            if (lockKey != null && lockToken != null) {
+                try {
+                    stringRedisTemplate.execute(UNLOCK_SCRIPT, List.of(lockKey), lockToken);
+                } catch (Exception e) {
+                    log.debug("会话锁释放失败 msg={}", e.getMessage());
+                }
+            }
+            bulkheadService.release(permit);
+        }
+    }
+
+    /**
+     * 并发舱壁拒绝时的快速返回：不落库、不调用模型，避免超载时延迟进一步恶化
+     */
+    private AssistantReplyVO overloadedReply(String sessionId, String reason) {
+        AssistantReplyVO vo = new AssistantReplyVO();
+        vo.setSessionId(sessionId);
+        vo.setReply("当前并发较高（" + reason + "），请稍后再试。");
+        vo.setMode("OVERLOADED");
+        vo.setDegraded(true);
+        vo.setSteps(List.of());
+        vo.setSuggestions(List.of());
+        vo.setTime(LocalDateTime.now());
+        return vo;
+    }
+
+    /**
+     * 会话被占用时的快速返回：不落库、不调用模型，避免并发把同一轮问答写两遍
+     */
+    private AssistantReplyVO busyReply(String sessionId) {
+        AssistantReplyVO vo = new AssistantReplyVO();
+        vo.setSessionId(sessionId);
+        vo.setReply("上一条消息还在处理中，请稍后再试。");
+        vo.setMode("LOCKED");
+        vo.setDegraded(true);
+        vo.setSteps(List.of());
+        vo.setSuggestions(List.of());
+        vo.setTime(LocalDateTime.now());
         return vo;
     }
 
@@ -202,6 +299,72 @@ public class AssistantServiceImpl implements AssistantService {
                 .map(AgentStepVO::getResult)
                 .findFirst()
                 .orElse(null);
+    }
+
+    /**
+     * 证据链：把知识来源、系统数据、子 Agent 结论与长期记忆转成可回溯条目
+     */
+    private List<AssistantCitationVO> citations(List<AgentStepVO> steps,
+                                                AssistantProvenanceService.Report provenance) {
+        if (steps == null || steps.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, AssistantProvenanceService.Anchor> anchors = provenance == null
+                ? Map.of()
+                : provenance.anchors().stream()
+                .collect(Collectors.toMap(AssistantProvenanceService.Anchor::stepNo, anchor -> anchor,
+                        (left, right) -> left));
+        List<AssistantCitationVO> result = new ArrayList<>();
+        for (AgentStepVO step : steps) {
+            if (result.size() >= MAX_CITATIONS) {
+                break;
+            }
+            if (!step.isSuccess() || !CITATION_TYPES.contains(StrUtil.blankToDefault(step.getType(), ""))) {
+                continue;
+            }
+            AssistantCitationVO citation = new AssistantCitationVO();
+            citation.setStepNo(step.getStepNo());
+            citation.setType(step.getType());
+            citation.setTitle(StrUtil.blankToDefault(step.getTitle(), step.getToolName()));
+            citation.setSource(StrUtil.blankToDefault(step.getSource(), defaultSource(step.getType())));
+            citation.setSnippet(StrUtil.maxLength(step.getResult(), 160));
+            citation.setTime(step.getTime());
+            AssistantProvenanceService.Anchor anchor = anchors.get(step.getStepNo());
+            if (anchor != null) {
+                citation.setChunkId(anchor.chunkId());
+                citation.setReplyStart(anchor.replyStart());
+                citation.setReplyEnd(anchor.replyEnd());
+                citation.setOverlap(anchor.overlap());
+                citation.setVerified(anchor.verified());
+            }
+            result.add(citation);
+        }
+        return result;
+    }
+
+    /**
+     * 答复溯源：开关关闭或计算异常时返回空报告，不影响主流程
+     */
+    private AssistantProvenanceService.Report provenanceReport(String reply, List<AgentStepVO> steps) {
+        Prd2ApiProperties.Agent config = properties.getAgent();
+        if (config == null || !config.isProvenanceEnabled()) {
+            return new AssistantProvenanceService.Report(0.0D, 0, 0, List.of());
+        }
+        try {
+            return provenanceService.trace(reply, steps);
+        } catch (Exception e) {
+            log.warn("答复溯源计算失败 msg={}", e.getMessage());
+            return new AssistantProvenanceService.Report(0.0D, 0, 0, List.of());
+        }
+    }
+
+    private String defaultSource(String type) {
+        return switch (StrUtil.blankToDefault(type, "")) {
+            case "KNOWLEDGE" -> "平台知识库";
+            case "SUBAGENT" -> "专家子 Agent";
+            case "MEMORY" -> "用户长期记忆";
+            default -> "系统实时数据";
+        };
     }
 
     @Override
@@ -277,6 +440,31 @@ public class AssistantServiceImpl implements AssistantService {
             log.info("助手会话清理完成 sessions={} messages={} threshold={}", sessions, messages, threshold);
         }
         return messages + sessions;
+    }
+
+    @Override
+    public LockState lockState(String sessionId) {
+        if (StrUtil.isBlank(sessionId)) {
+            return new LockState(false, -1L);
+        }
+        String tenantId = TenantContextUtil.requireTenantId();
+        String userKey = TenantContextUtil.getUserKey();
+        if (StrUtil.isBlank(userKey)) {
+            userKey = TenantContextUtil.getUserId();
+        }
+        if (StrUtil.isBlank(userKey)) {
+            return new LockState(false, -1L);
+        }
+        String key = RedisKeyConstant.assistantChatLock(tenantId, userKey, sessionId);
+        try {
+            Long ttl = stringRedisTemplate.getExpire(key, TimeUnit.SECONDS);
+            if (ttl != null && ttl > 0) {
+                return new LockState(true, ttl);
+            }
+        } catch (Exception e) {
+            log.debug("会话锁状态查询失败 msg={}", e.getMessage());
+        }
+        return new LockState(false, -1L);
     }
 
     /**
@@ -383,6 +571,30 @@ public class AssistantServiceImpl implements AssistantService {
             vo.setMaxTokenBudget(config.getMaxTokenBudget());
             vo.setDelegateEnabled(config.isDelegateEnabled());
             vo.setExperts(toolRegistry.experts().stream().sorted().toList());
+            vo.setPlanEnabled(config.isPlanEnabled());
+            vo.setPlanMaxSteps(config.getPlanMaxSteps());
+            vo.setCancelEnabled(true);
+            vo.setSupervisorEnabled(config.isDelegateEnabled());
+            vo.setCriticEnabled(config.isCriticEnabled());
+            vo.setCriticMinScore(config.getCriticMinScore());
+            vo.setCorrectiveRagEnabled(config.isCorrectiveRag());
+            vo.setRetrievalMinConfidence(config.getRetrievalMinConfidence());
+            vo.setMemoryReflectionEnabled(config.isMemoryReflection());
+            vo.setCheckpointEnabled(config.isCheckpointEnabled());
+            vo.setToolPolicyEnabled(config.isToolPolicyEnabled());
+            vo.setReflectionEnabled(config.isReflectionEnabled());
+            vo.setPiiMaskEnabled(config.isPiiMaskEnabled());
+            vo.setContractEnabled(config.isContractEnabled());
+            vo.setProvenanceEnabled(config.isProvenanceEnabled());
+            vo.setReplayEnabled(config.isReplayEnabled());
+            vo.setFailureMiningEnabled(config.isFailureMiningEnabled());
+            vo.setFeedbackEnabled(config.isFeedbackEnabled());
+            vo.setAuditEnabled(config.isAuditEnabled());
+            vo.setToolCacheEnabled(config.isToolCacheEnabled());
+            vo.setToolCacheTtlSeconds(config.getToolCacheTtlSeconds());
+            vo.setArgumentGuardEnabled(config.isArgumentGuardEnabled());
+            vo.setToolRateLimitPerMinute(config.getToolRateLimitPerMinute());
+            vo.setDiagnoseEnabled(config.isDiagnoseEnabled());
         }
         return vo;
     }
@@ -447,6 +659,7 @@ public class AssistantServiceImpl implements AssistantService {
         String reply = result.success()
                 ? "已按你的确认执行：" + result.summary()
                 : "执行未成功：" + StrUtil.blankToDefault(result.summary(), "请稍后重试");
+        reply = maskPii(reply);
         persistTrace(ticket.sessionId(), tenantId, userId, List.of(step));
         appendAssistantMessage(ticket.sessionId(), tenantId, userId, reply);
 
@@ -460,6 +673,7 @@ public class AssistantServiceImpl implements AssistantService {
         vo.setTokenUsed(0L);
         vo.setSteps(List.of(step));
         vo.setSuggestions(AssistantPromptConstant.SUGGESTIONS.subList(0, 3));
+        vo.setCitations(citations(List.of(step), null));
         vo.setTime(LocalDateTime.now());
         if (result.success() && StrUtil.isNotBlank(result.actionType())
                 && !AssistantActionType.NONE.equals(result.actionType())) {
@@ -467,6 +681,31 @@ public class AssistantServiceImpl implements AssistantService {
                     result.actionTarget(), result.data()));
         }
         return vo;
+    }
+
+    /**
+     * PII 脱敏统一入口：开关关闭时原样返回
+     */
+    private String maskPii(String text) {
+        Prd2ApiProperties.Agent config = properties.getAgent();
+        if (config == null || !config.isPiiMaskEnabled() || StrUtil.isBlank(text)) {
+            return text;
+        }
+        PiiMaskUtil.MaskedText masked = PiiMaskUtil.maskAndCount(text);
+        metricUtil.agentPiiMask(masked.total());
+        return masked.text();
+    }
+
+    private void maskSteps(List<AgentStepVO> steps) {
+        if (steps == null || steps.isEmpty()) {
+            return;
+        }
+        for (AgentStepVO step : steps) {
+            step.setTitle(maskPii(step.getTitle()));
+            step.setArguments(maskPii(step.getArguments()));
+            step.setResult(maskPii(step.getResult()));
+            step.setSource(maskPii(step.getSource()));
+        }
     }
 
     private void appendAssistantMessage(String sessionId, String tenantId, String userId, String content) {
@@ -507,8 +746,8 @@ public class AssistantServiceImpl implements AssistantService {
                 trace.setStepNo(step.getStepNo());
                 trace.setStepType(step.getType());
                 trace.setToolName(step.getToolName());
-                trace.setToolArgs(StrUtil.maxLength(step.getArguments(), 500));
-                trace.setToolResult(StrUtil.maxLength(step.getResult(), 2000));
+                trace.setToolArgs(maskPii(StrUtil.maxLength(step.getArguments(), 500)));
+                trace.setToolResult(maskPii(StrUtil.maxLength(step.getResult(), 2000)));
                 trace.setSuccess(step.isSuccess() ? 1 : 0);
                 trace.setLatencyMs(step.getLatencyMs());
                 trace.setCreateTime(LocalDateTime.now());

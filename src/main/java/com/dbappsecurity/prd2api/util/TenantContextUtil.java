@@ -81,6 +81,18 @@ public final class TenantContextUtil {
         return ADMIN_ROLE.equalsIgnoreCase(getRole());
     }
 
+    /**
+     * 管理员专属操作（知识库管理、优惠券发放等）的兜底校验
+     * <p>
+     * Controller 层由 AuthInterceptor 拦截，这里再做一次断言，
+     * 防止绕过 HTTP 入口的内部调用或未来新增入口漏加权限。
+     */
+    public static void requireAdmin() {
+        if (!isAdmin()) {
+            throw new BizException(BizErrorCodeEnum.FORBIDDEN, "该操作仅限管理员执行");
+        }
+    }
+
     @Data
     public static class UserContext {
         private String userId;

@@ -5,6 +5,7 @@ import com.dbappsecurity.prd2api.agent.tool.AssistantToolRegistry;
 import com.dbappsecurity.prd2api.config.Prd2ApiProperties;
 import com.dbappsecurity.prd2api.rag.EmbeddingService;
 import com.dbappsecurity.prd2api.service.AssistantToolSelector;
+import com.dbappsecurity.prd2api.service.AssistantToolPolicyService;
 import com.dbappsecurity.prd2api.util.MetricUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class AssistantToolSelectorImpl implements AssistantToolSelector {
     private final EmbeddingService embeddingService;
     private final Prd2ApiProperties properties;
     private final MetricUtil metricUtil;
+    private final AssistantToolPolicyService toolPolicyService;
 
     /** 工具描述向量缓存，key = 工具名 */
     private final Map<String, float[]> vectorCache = new ConcurrentHashMap<>();
@@ -44,14 +46,20 @@ public class AssistantToolSelectorImpl implements AssistantToolSelector {
     @Override
     public Selection select(String question) {
         List<String> all = toolRegistry.names();
+        // 经验策略：从历史成功轨迹里召回“相似问法用过的工具”，作为语义检索的补充
+        List<String> policyTools = toolPolicyService.preferred(question).stream()
+                .filter(all::contains).distinct().toList();
+        boolean policyHit = !policyTools.isEmpty();
         Prd2ApiProperties.Agent config = properties.getAgent();
         if (config == null || !config.isToolRouting() || all.size() <= config.getToolTopK()
                 || StrUtil.isBlank(question)) {
-            return new Selection(all, toolRegistry.definitionsJson(), false, all.size());
+            return new Selection(all, toolRegistry.definitionsJson(), false, all.size(),
+                    policyHit, policyTools);
         }
         float[] questionVector = safeEmbed(question);
         if (questionVector.length == 0) {
-            return new Selection(all, toolRegistry.definitionsJson(), false, all.size());
+            return new Selection(all, toolRegistry.definitionsJson(), false, all.size(),
+                    policyHit, policyTools);
         }
         ensureToolVectors(all);
 
@@ -66,6 +74,8 @@ public class AssistantToolSelectorImpl implements AssistantToolSelector {
         scored.sort(Comparator.<Map.Entry<String, Double>>comparingDouble(Map.Entry::getValue).reversed());
 
         Set<String> selected = new LinkedHashSet<>(CORE_TOOLS);
+        // 经验命中优先占位，避免语义分略低被 top-k 截掉
+        selected.addAll(policyTools);
         for (Map.Entry<String, Double> entry : scored) {
             if (selected.size() >= Math.max(1, config.getToolTopK()) + CORE_TOOLS.size()) {
                 break;
@@ -75,12 +85,15 @@ public class AssistantToolSelectorImpl implements AssistantToolSelector {
             }
         }
         if (selected.size() >= all.size()) {
-            return new Selection(all, toolRegistry.definitionsJson(), false, all.size());
+            return new Selection(all, toolRegistry.definitionsJson(), false, all.size(),
+                    policyHit, policyTools);
         }
         List<String> names = selected.stream().filter(all::contains).toList();
         metricUtil.agentToolRoute(true, all.size(), names.size());
-        log.info("工具动态检索 candidate={} selected={} {}", all.size(), names.size(), names);
-        return new Selection(names, toolRegistry.definitionsJson(names), true, all.size());
+        log.info("工具动态检索 candidate={} selected={} policyHit={} {}", all.size(), names.size(),
+                policyHit, names);
+        return new Selection(names, toolRegistry.definitionsJson(names), true, all.size(),
+                policyHit, policyTools);
     }
 
     /**

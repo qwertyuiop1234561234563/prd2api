@@ -104,8 +104,12 @@ public class AssistantSemanticCacheServiceImpl implements AssistantSemanticCache
         if (outcome.steps() != null) {
             for (AgentStepVO step : outcome.steps()) {
                 String type = StrUtil.blankToDefault(step.getType(), "");
-                if ("TOOL".equals(type) || "CONFIRM".equals(type)
+                // 中断、待确认、记忆写入等过程性步骤，以及任何失败步骤，都不可作为可复用答复
+                if ("TOOL".equals(type) || "CONFIRM".equals(type) || "CANCEL".equals(type)
                         || "MEMORY".equals(type) || "GUARD".equals(type)) {
+                    return false;
+                }
+                if (!step.isSuccess()) {
                     return false;
                 }
             }

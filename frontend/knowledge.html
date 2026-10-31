@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MIKU // PRD2API · 知识库</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;800&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body data-page="knowledge">
+<div class="aurora"><i></i><i></i><i></i></div>
+<canvas id="stars"></canvas>
+<div class="grid"></div>
+<div class="scan"></div>
+<div class="miku-bg" aria-hidden="true">
+  <img class="miku-bg-art" src="assets/miku-bg.jpg" alt="" draggable="false">
+  <img class="miku-bg-spot" src="assets/miku-bg.jpg" alt="" draggable="false">
+</div>
+
+<div class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true">
+          <path d="M9 18V6.5l9-2V16" stroke-linecap="round"/>
+          <circle cx="6.5" cy="18" r="2.6"/><circle cx="15.5" cy="16" r="2.6"/>
+        </svg>
+      </div>
+      <div>
+        <h1>MIKU <em>//</em> PRD2API</h1>
+        <p class="sub">Vocaloid-Style Requirement Oracle</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="chip" id="ragChip"><span class="dot" id="ragDot"></span><span id="ragText">RAG —</span></span>
+      <span class="chip"><span class="dot on"></span><span id="tenantText">default</span></span>
+      <span class="chip" id="userChip"><span class="dot" id="userDot"></span><span id="userText">未登录</span></span>
+      <button class="btn ghost" id="authToggle">登录 / 注册</button>
+      <nav class="nav">
+        <a href="index.html">工作台</a>
+        <a href="account.html">账户中心</a>
+        <a href="profile.html">个人中心</a>
+        <a href="knowledge.html" class="active">知识库</a>
+        <a href="settings.html">接入设置</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-single">
+    <div class="page-head">
+      <h2>知识库</h2>
+      <p class="sub">Knowledge · Offline Documents</p>
+    </div>
+
+    <section class="kb-stats" id="kbStats">
+      <div class="kb-stat"><div class="k">Documents</div><div class="v" id="kbStatTotal">—</div></div>
+      <div class="kb-stat"><div class="k">Completed</div><div class="v aqua" id="kbStatDone">—</div></div>
+      <div class="kb-stat"><div class="k">Processing</div><div class="v pink" id="kbStatRunning">—</div></div>
+      <div class="kb-stat"><div class="k">Failed</div><div class="v danger" id="kbStatFail">—</div></div>
+      <div class="kb-stat"><div class="k">Chunks</div><div class="v" id="kbStatChunks">—</div></div>
+      <div class="kb-stat"><div class="k">Vector</div><div class="v mid" id="kbStatVector">—</div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">离线文档上传</div>
+      <div class="kb-upload">
+        <div class="dropzone kb-dropzone" id="kbDropzone">
+          <div class="sweep"></div>
+          <div class="dz-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5"/><path d="M3.5 14v4.5A1.5 1.5 0 005 20h14a1.5 1.5 0 001.5-1.5V14"/>
+            </svg>
+          </div>
+          <div class="dz-title">拖入知识文档</div>
+          <div class="dz-hint">md · txt · docx · pdf　≤ 20MB<br>后缀 + 魔数校验 · md5 去重 · 入库后自动解析切分</div>
+          <div class="dz-meta" id="kbDzMeta">点击或拖入文件</div>
+          <input type="file" id="kbFileInput" accept=".md,.txt,.docx,.pdf" hidden>
+        </div>
+        <div class="kb-upload-side">
+          <div class="field">
+            <label for="kbStrategy">切分策略</label>
+            <select id="kbStrategy">
+              <option value="">跟随全局配置</option>
+              <option value="semantic">semantic · 语义分块</option>
+              <option value="fixed">fixed · 固定长度</option>
+            </select>
+          </div>
+          <button class="btn solid" id="kbPick" type="button">选择文件上传</button>
+          <div class="panel-hint">上传后按 PENDING → 解析 → 切分 → 向量化 异步流水线处理，列表状态会自动刷新；索引完成后 MIKU 助手即可检索到这份文档。</div>
+        </div>
+      </div>
+      <div class="upload-result kb-upload-result" id="kbUploadResult">
+        <div class="ur-name" id="kbUrName">—</div>
+        <div class="ur-meta" id="kbUrMeta">—</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">文档列表<span class="kb-count" id="kbCount">—</span></div>
+      <div class="kb-toolbar">
+        <input id="kbKeyword" placeholder="按文件名搜索…" autocomplete="off">
+        <select id="kbStatusFilter">
+          <option value="">全部状态</option>
+          <option value="PENDING">PENDING · 排队中</option>
+          <option value="PARSING">PARSING · 解析中</option>
+          <option value="CHUNKING">CHUNKING · 切分中</option>
+          <option value="EMBEDDING">EMBEDDING · 向量化</option>
+          <option value="COMPLETED">COMPLETED · 已完成</option>
+          <option value="FAILED">FAILED · 失败</option>
+        </select>
+        <button class="btn" id="kbRefresh" type="button">刷新</button>
+      </div>
+      <div class="kb-table-wrap">
+        <table class="kb-table">
+          <thead>
+            <tr>
+              <th>文档</th>
+              <th>策略</th>
+              <th>大小</th>
+              <th>分段</th>
+              <th>状态</th>
+              <th>索引</th>
+              <th>上传人</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="kbDocs">
+            <tr><td colspan="9"><div class="kb-empty">正在读取知识库…</div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="kb-pager">
+        <button class="btn ghost" id="kbPrev" type="button">← 上一页</button>
+        <span id="kbPageInfo">—</span>
+        <button class="btn ghost" id="kbNext" type="button">下一页 →</button>
+      </div>
+      <div class="panel-hint">同租户内所有成员都可检索与预览；停用、重建、删除仅限上传人本人或管理员。停用会同步移除向量索引，重新启用时缺失的索引会自动重建。</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title">检索测试</div>
+      <div class="kb-search-row">
+        <input id="kbQuery" placeholder="输入一句需求描述，验证召回效果…" maxlength="500" autocomplete="off">
+        <select id="kbTopK">
+          <option value="4">Top 4</option>
+          <option value="8">Top 8</option>
+          <option value="12">Top 12</option>
+          <option value="20">Top 20</option>
+        </select>
+        <button class="btn solid" id="kbSearchBtn" type="button">检索</button>
+      </div>
+      <div class="kb-results" id="kbSearchResults">
+        <div class="kb-empty">与 Agent 使用同一检索链路：平台内置语料 + 本租户上传文档，合并排序后返回。</div>
+      </div>
+    </section>
+
+    <div class="page-foot"><a class="back" href="index.html">← 返回工作台</a></div>
+  </main>
+</div>
+
+<div class="kb-modal" id="kbChunkModal" aria-hidden="true">
+  <div class="kb-modal-card" role="dialog" aria-label="分段预览">
+    <div class="kb-modal-head">
+      <div>
+        <b id="kbChunkTitle">分段预览</b>
+        <span id="kbChunkMeta">—</span>
+      </div>
+      <button class="btn ghost" id="kbChunkClose" type="button" aria-label="关闭">✕</button>
+    </div>
+    <div class="kb-chunk-list" id="kbChunkList">
+      <div class="kb-empty">正在读取分段…</div>
+    </div>
+    <div class="kb-pager">
+      <button class="btn ghost" id="kbChunkPrev" type="button">← 上一页</button>
+      <span id="kbChunkPageInfo">—</span>
+      <button class="btn ghost" id="kbChunkNext" type="button">下一页 →</button>
+    </div>
+  </div>
+</div>
+
+<div class="fufu" id="fufu" role="button" tabindex="0" aria-label="初音未来玩偶，可拖动；单击打开问答面板，双击归位">
+  <div class="fufu-bubble" id="fufuBubble"></div>
+  <img class="fufu-img" src="assets/fufu.png" alt="初音未来 fufu 毛绒玩偶" draggable="false">
+</div>
+
+<div class="fufu-chat" id="fufuChat" role="dialog" aria-label="MIKU 助手对话框" aria-hidden="true">
+  <div class="fc-head">
+    <div class="fc-avatar"><img src="assets/fufu.png" alt=""></div>
+    <div class="fc-title">
+      <b>MIKU 助手</b>
+      <span><i class="fc-dot"></i>ONLINE · PRD2API AGENT</span>
+    </div>
+    <button class="fc-close" id="fcClose" type="button" aria-label="收起对话框">✕</button>
+  </div>
+  <div class="fc-body" id="fcBody" aria-live="polite"></div>
+  <div class="fc-tips" id="fcTips">
+    <button class="fc-tip" type="button">平台能做什么</button>
+    <button class="fc-tip" type="button">支持哪些格式</button>
+    <button class="fc-tip" type="button">任务进度</button>
+    <button class="fc-tip" type="button">我的额度</button>
+  </div>
+  <div class="fc-input">
+    <input id="fcInput" maxlength="120" placeholder="问我平台、流程，或让我帮你操作…" autocomplete="off">
+    <button class="btn solid" id="fcSend" type="button">发送</button>
+  </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="assets/app.js" defer></script>
+</body>
+</html>

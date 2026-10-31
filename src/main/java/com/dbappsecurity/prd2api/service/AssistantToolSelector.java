@@ -21,11 +21,18 @@ public interface AssistantToolSelector {
     /**
      * 挑选结果
      *
-     * @param toolNames 选中的工具名
-     * @param toolsJson 对应工具定义 JSON
-     * @param filtered  是否真的做了裁剪（false 表示全量注入）
-     * @param candidates 候选工具总数
+     * @param toolNames   选中的工具名
+     * @param toolsJson   对应工具定义 JSON
+     * @param filtered    是否真的做了裁剪（false 表示全量注入）
+     * @param candidates  候选工具总数
+     * @param policyHit   是否命中历史经验策略
+     * @param policyTools 经验策略推荐的工具
      */
-    record Selection(List<String> toolNames, String toolsJson, boolean filtered, int candidates) {
+    record Selection(List<String> toolNames, String toolsJson, boolean filtered, int candidates,
+                     boolean policyHit, List<String> policyTools) {
+
+        public Selection(List<String> toolNames, String toolsJson, boolean filtered, int candidates) {
+            this(toolNames, toolsJson, filtered, candidates, false, List.of());
+        }
     }
 }
